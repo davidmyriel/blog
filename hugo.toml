@@ -1,0 +1,4 @@
+baseURL = 'https://davidmyriel.com/'
+languageCode = 'en-us'
+title = 'DavidMyriel.com'
+theme = 'PaperMod'
