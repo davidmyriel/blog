@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Multi-vector LinkedIn Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #14110f;
+    --ink: #f4efe9;
+    --muted: #8f857c;
+    --orange: #fe4f02;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0c0a09; color: var(--ink); font-family: Geist, system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; }
+  canvas { display: block; height: calc(100vh - 90px); max-width: 100%; aspect-ratio: 1080 / 1350; }
+  .controls { display: flex; gap: 10px; align-items: center; width: min(100%, 720px); font: 12px 'Geist Mono', monospace; color: var(--muted); }
+  .controls button { font: inherit; color: var(--ink); background: #221d1a; border: 1px solid #3a332e; padding: 6px 12px; cursor: pointer; }
+  .controls input { flex: 1; accent-color: var(--orange); }
+  body.export { padding: 0; background: var(--bg); }
+  body.export .controls { display: none; }
+  body.export canvas { height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1350"></canvas>
+<div class="controls">
+  <button id="play">Pause</button>
+  <input id="scrub" type="range" min="0" max="41.5" step="0.01" value="0" />
+  <span id="time">0.0s</span>
+</div>
+<script>
+// Timeline-driven: every frame is a pure function of t, so renderAt(t) can be captured frame by frame.
+const W = 1080, H = 1350, T = 41.5;
+const ORANGE = '#fe4f02', INK = '#f4efe9', MUTED = '#8f857c', BG = '#14110f';
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const logo = new Image();
+logo.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwMCIgaGVpZ2h0PSI1NjAiIHZpZXdCb3g9IjAgMCAyMDAwIDU2MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIyMzAiIHk9IjExNSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMjMwIiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjIzMCIgeT0iMzQ1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIyMzAiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTE5MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTMwNSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTE5MCIgeT0iMjMwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxMzA1IiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjE0MjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjE0MjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjEwNzUiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxMDc1IiB5PSIxMTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjEwNzUiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTQyMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTQyMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTQyMCIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxNDIwIiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjEwNzUiIHk9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI3MTAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjgyNSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI1OTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjU5NSIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI1OTUiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iNTk1IiB5PSIzNDUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjU5NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjcxMCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI4MjUiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSI0NjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjU5NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSIxMTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgeT0iMjMwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSI0NjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSI0NjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSIzNDUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxNTU1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8cmVjdCB4PSIxNTU1IiB5PSIxMTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE1NTUiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNGRTUwMDAiLz4KPHJlY3QgeD0iMTc4NSIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8cmVjdCB4PSIxNjcwIiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE5MDAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE5MDAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE3ODUiIHk9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNGRTUwMDAiLz4KPHJlY3QgeD0iMTkwMCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8cmVjdCB4PSIxNTU1IiB5PSIzNDUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE1NTUiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNGRTUwMDAiLz4KPHJlY3QgeD0iMTkwMCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8L3N2Zz4K';
+
+// ---------- helpers ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const ease = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const easeOut = x => 1 - Math.pow(1 - x, 3);
+const lerp = (a, b, x) => a + (b - a) * x;
+// visibility window with fades
+const win = (t, a, b, f = 0.5) => Math.min(prog(t, a, a + f), 1 - prog(t, b - f, b));
+
+function rng(seed) {
+  return () => {
+    seed |= 0; seed = seed + 0x6d2b79f5 | 0;
+    let r = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    r = r + Math.imul(r ^ r >>> 7, 61 | r) ^ r;
+    return ((r ^ r >>> 14) >>> 0) / 4294967296;
+  };
+}
+function gauss(r) {
+  const u = Math.max(r(), 1e-9), v = r();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function unit(r) {
+  const v = [gauss(r), gauss(r), gauss(r)];
+  const n = Math.hypot(...v);
+  return v.map(x => x / n);
+}
+
+function text(str, x, y, { size = 40, weight = 400, color = INK, align = 'left', mono = false, spacing = 0, alpha = 1, baseline = 'alphabetic' } = {}) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.font = `${weight} ${size}px ${mono ? "'Geist Mono', monospace" : 'Geist, sans-serif'}`;
+  ctx.letterSpacing = `${spacing}px`;
+  ctx.fillStyle = color;
+  ctx.textAlign = align;
+  ctx.textBaseline = baseline;
+  ctx.fillText(str, x, y);
+  const w = ctx.measureText(str).width;
+  ctx.restore();
+  return w;
+}
+function measure(str, size, weight = 400, mono = false, spacing = 0) {
+  ctx.save();
+  ctx.font = `${weight} ${size}px ${mono ? "'Geist Mono', monospace" : 'Geist, sans-serif'}`;
+  ctx.letterSpacing = `${spacing}px`;
+  const w = ctx.measureText(str).width;
+  ctx.restore();
+  return w;
+}
+// pixel eyebrow: tiny orange square + mono caps
+function eyebrow(str, x, y, alpha = 1, align = 'left') {
+  const w = measure(str, 20, 500, true, 2.4) + 20;
+  const x0 = align === 'center' ? x - w / 2 : x;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.fillStyle = ORANGE;
+  ctx.fillRect(x0, y - 13, 8, 8);
+  ctx.restore();
+  text(str, x0 + 20, y, { size: 20, weight: 500, mono: true, color: MUTED, spacing: 2.4, alpha });
+}
+function headline(lines, x, y, { size = 76, alpha = 1, align = 'left', colors = [] } = {}) {
+  lines.forEach((ln, i) => text(ln, x, y + i * size * 1.1, { size, weight: 440, spacing: -size * 0.045, align, alpha, color: colors[i] || INK }));
+}
+
+// ---------- background: dark lattice + framed corner nodes ----------
+function background() {
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.045)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= W; x += 54) { ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, H); ctx.stroke(); }
+  for (let y = 0; y <= H; y += 54) { ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(W, y + 0.5); ctx.stroke(); }
+  // vignette so the lattice fades toward the edges
+  const g = ctx.createRadialGradient(W / 2, H / 2, 200, W / 2, H / 2, 900);
+  g.addColorStop(0, 'rgba(20,17,15,0)');
+  g.addColorStop(1, 'rgba(20,17,15,0.92)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  // frame
+  const m = 48;
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  ctx.strokeRect(m + 0.5, m + 0.5, W - 2 * m, H - 2 * m);
+  ctx.fillStyle = ORANGE;
+  for (const [cx, cy] of [[m, m], [W - m, m], [m, H - m], [W - m, H - m]]) ctx.fillRect(cx - 4, cy - 4, 8, 8);
+  ctx.restore();
+}
+function chrome(t) {
+  // small logo top-left, scene counter top-right
+  if (logo.complete && logo.naturalWidth) {
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(logo, 96, 96, 100, 28);
+    ctx.restore();
+  }
+  text('topk.io', W - 96, 118, { size: 20, mono: true, color: MUTED, align: 'right', spacing: 1 });
+}
+
+// ---------- scene 1: promise (0–4.5) ----------
+function scene1(t) {
+  const a = win(t, 0, 4.5, 0.5);
+  if (a <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = a;
+  eyebrow('MULTI-VECTOR SEARCH', 96, 430, easeOut(prog(t, 0.1, 0.6)));
+  const l1 = easeOut(prog(t, 0.2, 1.0));
+  const l2 = easeOut(prog(t, 1.2, 2.0));
+  ctx.save(); ctx.translate(0, (1 - l1) * 20);
+  headline(['Multi-vector search', 'finds the best answers.'], 96, 560, { alpha: l1, size: 84 });
+  ctx.restore();
+  ctx.save(); ctx.translate(0, (1 - l2) * 20);
+  headline(['But it has always been', 'too slow to use at scale.'], 96, 790, { alpha: l2, size: 84, colors: [MUTED, MUTED] });
+  ctx.restore();
+  // block bar filling
+  const fill = ease(prog(t, 2.0, 3.6));
+  const cells = 24, cw = 30, gap = 6;
+  for (let i = 0; i < cells; i++) {
+    ctx.fillStyle = i < fill * cells ? ORANGE : 'rgba(255,255,255,0.07)';
+    ctx.fillRect(96 + i * (cw + gap), 960, cw, 14);
+  }
+  ctx.restore();
+}
+
+// ---------- scene 2: why it's accurate (4.5–10.5) ----------
+const QUERY = ['apollo', '11', 'landing', 'moon', 'date'];
+const DOC = 'Apollo 11 touched down on the Moon on July 20 , 1969 . Armstrong and Aldrin spent 21 hours on the surface .'.split(' ');
+const MATCH = { apollo: 'Apollo', '11': '11', landing: 'touched', moon: 'Moon', date: 'July' };
+
+function chipLayout(words, x0, y0, maxW, size, padX, h, gapX, gapY) {
+  const out = []; let x = x0, y = y0;
+  for (const w of words) {
+    const tight = w === '.' || w === ',';
+    const cw = measure(w, size, 400, true) + padX * 2;
+    if (x + cw > x0 + maxW) { x = x0; y += h + gapY; }
+    out.push({ w, x, y, cw, h });
+    x += cw + gapX;
+  }
+  return out;
+}
+
+function chip(c, { size, active = 0, alpha = 1, mutedText = false }) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.fillStyle = active > 0 ? `rgba(254,79,2,${0.14 * active})` : 'rgba(255,255,255,0.03)';
+  ctx.fillRect(c.x, c.y, c.cw, c.h);
+  ctx.strokeStyle = active > 0 ? `rgba(254,79,2,${0.25 + 0.75 * active})` : 'rgba(255,255,255,0.14)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(c.x + 0.75, c.y + 0.75, c.cw - 1.5, c.h - 1.5);
+  ctx.restore();
+  text(c.w, c.x + c.cw / 2, c.y + c.h / 2 + 1, { size, mono: true, align: 'center', baseline: 'middle', alpha, color: active > 0.5 ? INK : (mutedText ? MUTED : INK) });
+}
+
+function scene2(t) {
+  const a = win(t, 4.5, 10.5, 0.5);
+  if (a <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = a;
+  eyebrow('WHY IT IS ACCURATE', 96, 250);
+  headline(['It compares every word in', 'your query with every word', 'in the document.'], 96, 340, { size: 62 });
+
+  // query chips
+  const qSize = 30;
+  const q = chipLayout(QUERY, 96, 610, 888, qSize, 22, 64, 14, 14);
+  text('QUERY', 96, 590, { size: 18, mono: true, color: MUTED, spacing: 2 });
+  // doc chips
+  const dSize = 24;
+  const d = chipLayout(DOC, 96, 900, 888, dSize, 14, 52, 10, 14);
+  text('DOCUMENT', 96, 880, { size: 18, mono: true, color: MUTED, spacing: 2 });
+
+  // orthogonal links, one per query word, staggered; lanes nest so no lines cross
+  const targets = QUERY.map(w => d.find(c => c.w === MATCH[w]));
+  const dir = QUERY.map((w, i) => Math.sign(targets[i].x + targets[i].cw / 2 - (q[i].x + q[i].cw / 2)));
+  const left = QUERY.map((_, i) => i).filter(i => dir[i] < 0);
+  const right = QUERY.map((_, i) => i).filter(i => dir[i] >= 0).reverse();
+  const laneOf = {};
+  left.forEach((i, r) => laneOf[i] = 730 + r * 30);
+  right.forEach((i, r) => laneOf[i] = 730 + r * 30);
+  QUERY.forEach((w, i) => {
+    const p = ease(prog(t, 5.6 + i * 0.55, 6.3 + i * 0.55));
+    const qc = q[i];
+    const dc = targets[i];
+    const lane = laneOf[i];
+    const x1 = qc.x + qc.cw / 2, y1 = qc.y + qc.h;
+    const x2 = dc.x + dc.cw / 2, y2 = dc.y;
+    const seg = [[x1, y1], [x1, lane], [x2, lane], [x2, y2]];
+    // total length and partial draw
+    const lens = [lane - y1, Math.abs(x2 - x1), y2 - lane];
+    let remain = p * lens.reduce((s, v) => s + v, 0);
+    ctx.save();
+    ctx.strokeStyle = ORANGE;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(...seg[0]);
+    for (let k = 0; k < 3 && remain > 0; k++) {
+      const f = Math.min(1, remain / Math.max(lens[k], 1e-6));
+      ctx.lineTo(lerp(seg[k][0], seg[k + 1][0], f), lerp(seg[k][1], seg[k + 1][1], f));
+      remain -= lens[k];
+    }
+    ctx.stroke();
+    if (p > 0) { ctx.fillStyle = ORANGE; ctx.fillRect(x1 - 4, y1 - 4, 8, 8); }
+    if (p >= 1) ctx.fillRect(x2 - 4, y2 - 4, 8, 8);
+    ctx.restore();
+    qc.active = p > 0 ? 1 : 0;
+    dc.active = Math.max(dc.active || 0, prog(p, 0.9, 1));
+  });
+  q.forEach(c => chip(c, { size: qSize, active: c.active || 0 }));
+  d.forEach(c => chip(c, { size: dSize, active: c.active || 0, mutedText: true }));
+
+  const fa = easeOut(prog(t, 8.6, 9.2));
+  text('Each word finds its best match, even when the', 96, 1170, { size: 30, color: MUTED, alpha: fa });
+  text('wording differs: “landing” matches “touched”.', 96, 1212, { size: 30, color: MUTED, alpha: fa });
+  ctx.restore();
+}
+
+// ---------- scene 3: the globe (10.5–35) ----------
+// Beats: words as points -> reference points -> measure closeness -> keep 8 -> every word -> compare with a document -> payoff
+const N_ANCHORS = 2048, K = 8;
+const r = rng(11);
+const ANCHORS = Array.from({ length: N_ANCHORS }, () => unit(r));
+const SPIN = 0.06; // rad/s
+const TILT = -0.38;
+function rotY(v, a) { const c = Math.cos(a), s = Math.sin(a); return [c * v[0] + s * v[2], v[1], -s * v[0] + c * v[2]]; }
+function rotX(v, a) { const c = Math.cos(a), s = Math.sin(a); return [v[0], c * v[1] - s * v[2], s * v[1] + c * v[2]]; }
+function view(v, t) { return rotX(rotY(v, SPIN * t), TILT); }
+function norm(v) { const n = Math.hypot(...v); return v.map(x => x / n); }
+function nearest(v) {
+  return ANCHORS.map((a, j) => [a[0] * v[0] + a[1] * v[1] + a[2] * v[2], j]).sort((p, q) => q[0] - p[0]).slice(0, K);
+}
+// place each query word so it faces the viewer at a chosen time
+const FRONT = [[-0.05, 0.05], [0.45, -0.35], [-0.5, 0.3], [0.35, 0.45], [-0.35, -0.5]];
+const FACE_AT = [19, 21, 21, 21, 21];
+const TOKENS = QUERY.map((w, i) => {
+  const [fx, fy] = FRONT[i];
+  const fz = Math.sqrt(1 - fx * fx - fy * fy);
+  const v = rotY(rotX([fx, fy, fz], -TILT), -SPIN * FACE_AT[i]);
+  return { w, v, near: nearest(v) };
+});
+// document words: close in meaning to their query matches, plus unrelated words
+const dr = rng(77);
+const nudge = (v, e) => norm(v.map(x => x + e * gauss(dr)));
+const DOC_WORDS = [
+  nudge(TOKENS[0].v, 0.03), nudge(TOKENS[1].v, 0.03), nudge(TOKENS[2].v, 0.06),
+  nudge(TOKENS[3].v, 0.03), nudge(TOKENS[4].v, 0.08),
+  unit(dr), unit(dr), unit(dr), unit(dr),
+];
+const QSLOTS = new Set(TOKENS.flatMap(tk => tk.near.map(([, j]) => j)));
+const DSLOTS = new Set(DOC_WORDS.flatMap(v => nearest(v).map(([, j]) => j)));
+const SHARED = new Set([...QSLOTS].filter(j => DSLOTS.has(j)));
+
+// timeline
+const B = { words: 10.5, anchors: 14.0, measure: 17.0, keep: 21.0, every: 24.5, compare: 28.5, payoff: 32.5, end: 35.0 };
+const RAY0 = B.measure + 1.0, RAY_STEP = 0.32;            // apollo's rays, one at a time
+const FLY0 = B.keep + 0.4;                                 // apollo's 8 values fly into the list
+const OTHER = i => B.every + 0.9 + (i - 1) * 0.6;          // other words light their points
+
+const GX = W / 2, GY = 690, GR = 300;
+const SC = 128, SR = 16, CELL = 6, CG = 1;
+const SX = (W - SC * (CELL + CG)) / 2;
+const STRIP_H = SR * (CELL + CG);
+
+// camera: zoom toward apollo while measuring and keeping
+const ZOOM = 3.4;
+function camera(t) {
+  const zc = ease(prog(t, B.measure, B.measure + 0.9)) * (1 - ease(prog(t, B.every, B.every + 0.8)));
+  const v = view(TOKENS[0].v, t);
+  const fx = lerp(GX, GX + v[0] * GR, zc), fy = lerp(GY, GY - v[1] * GR, zc);
+  const z = 1 + (ZOOM - 1) * zc;
+  return { z, zc, map: (x, y) => [GX + (x - fx) * z, GY + (y - fy) * z] };
+}
+// how lit each anchor is right now (apollo first, then the rest)
+function litAt(t) {
+  const lit = new Map();
+  TOKENS.forEach((tk, i) => tk.near.forEach(([, j], n) => {
+    const s = i === 0 ? RAY0 + n * RAY_STEP : OTHER(i) + n * 0.04;
+    const p = prog(t, s, s + 0.3);
+    if (p > 0) lit.set(j, Math.max(lit.get(j) || 0, p));
+  }));
+  return lit;
+}
+// when a slot in the query list fills
+function slotTime(j) {
+  let best = Infinity;
+  TOKENS.forEach((tk, i) => tk.near.forEach(([, jj], n) => {
+    if (jj !== j) return;
+    best = Math.min(best, i === 0 ? FLY0 + n * 0.12 : OTHER(i) + 0.3 + n * 0.04);
+  }));
+  return best;
+}
+
+function strip(x, y, slots, { color = ORANGE, alpha = 1, shared = null, fillTime = null, t = 0, proj = null } = {}) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  for (let j = 0; j < N_ANCHORS; j++) {
+    const cx = x + (j % SC) * (CELL + CG), cy = y + Math.floor(j / SC) * (CELL + CG);
+    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    ctx.fillRect(cx, cy, CELL, CELL);
+  }
+  let filled = 0;
+  slots.forEach(j => {
+    const cx = x + (j % SC) * (CELL + CG), cy = y + Math.floor(j / SC) * (CELL + CG);
+    let fp = 1;
+    if (fillTime) {
+      const s = fillTime(j);
+      fp = ease(prog(t, s, s + 0.6));
+      if (fp <= 0) return;
+      if (fp < 1 && proj) {
+        const [px, py] = proj[j];
+        ctx.fillStyle = ORANGE;
+        ctx.fillRect(lerp(px, cx + CELL / 2, fp) - 3, lerp(py, cy + CELL / 2, fp) - 3, 6, 6);
+        return;
+      }
+    }
+    filled++;
+    ctx.fillStyle = shared && shared.has(j) ? ORANGE : color;
+    ctx.fillRect(cx - 1, cy - 1, CELL + 2, CELL + 2);
+  });
+  ctx.restore();
+  return filled;
+}
+
+function scene3(t) {
+  const a = win(t, B.words, B.end, 0.6);
+  if (a <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = a;
+
+  const caps = [
+    [B.words, B.anchors, 'HOW WE MADE IT FAST', ['Every word becomes a point on a', 'sphere. Similar words sit close.']],
+    [B.anchors, B.measure, 'STEP 1', ['We add 2,048 fixed reference', 'points to the same sphere.']],
+    [B.measure, B.keep, 'STEP 2', ['For each word, we measure how', 'close every reference point is.']],
+    [B.keep, B.every, 'STEP 3', ['We keep the 8 closest and set', 'the other 2,040 to zero.']],
+    [B.every, B.compare, 'STEP 4', ['Every word does the same. The', 'query becomes one list of 2,048', 'slots, and almost all are empty.']],
+    [B.compare, B.payoff, 'STEP 5', ['A document gets its own list the', 'same way. When both lists fill', 'the same slot, the words match.']],
+    [B.payoff, B.end, 'RESULT', ['Search only checks the shared', 'slots, not every word against', 'every word in every document.']],
+  ];
+  for (const [s, e, eb, lines] of caps) {
+    const ca = win(t, s, e, 0.35);
+    if (ca <= 0) continue;
+    eyebrow(eb, 96, 190, ca);
+    lines.forEach((ln, k) => text(ln, 96, 250 + k * 48, { size: 42, weight: 440, spacing: -1.5, alpha: ca }));
+  }
+
+  // the globe fades away when the two lists are compared
+  const ga = 1 - ease(prog(t, B.compare, B.compare + 0.8));
+  const cam = camera(t);
+  const proj = new Array(N_ANCHORS);
+  for (let j = 0; j < N_ANCHORS; j++) {
+    const v = view(ANCHORS[j], t);
+    const [px, py] = cam.map(GX + v[0] * GR, GY - v[1] * GR);
+    proj[j] = [px, py, v[2]];
+  }
+  const lit = litAt(t);
+
+  if (ga > 0) {
+    ctx.save();
+    ctx.globalAlpha = a * ga;
+    ctx.beginPath(); ctx.rect(49, 380, W - 98, 660); ctx.clip();
+    const [cx0, cy0] = cam.map(GX, GY);
+    const glow = ctx.createRadialGradient(cx0, cy0, GR * 0.2 * cam.z, cx0, cy0, GR * 1.25 * cam.z);
+    glow.addColorStop(0, `rgba(254,79,2,${0.07 / cam.z})`);
+    glow.addColorStop(1, 'rgba(254,79,2,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(cx0, cy0, GR * 1.25 * cam.z, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx0, cy0, GR * cam.z, 0, Math.PI * 2); ctx.stroke();
+    for (let k = -2; k <= 2; k++) {
+      const lat = k * 0.5;
+      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+      ctx.beginPath();
+      for (let s = 0; s <= 64; s++) {
+        const ph = s / 64 * Math.PI * 2;
+        const v = view([Math.cos(lat) * Math.cos(ph), Math.sin(lat), Math.cos(lat) * Math.sin(ph)], t);
+        const [px, py] = cam.map(GX + v[0] * GR, GY - v[1] * GR);
+        s ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+      }
+      ctx.stroke();
+    }
+
+    // reference points
+    const shown = Math.floor(N_ANCHORS * ease(prog(t, B.anchors + 0.2, B.anchors + 2.4)));
+    const dimRest = prog(t, B.every + 1, B.every + 2);
+    for (let j = 0; j < shown; j++) {
+      if (lit.has(j)) continue;
+      const [px, py, z] = proj[j];
+      const depth = (z + 1) / 2;
+      const pop = clamp((shown - j) / 40);
+      ctx.fillStyle = `rgba(244,239,233,${(0.08 + 0.42 * depth) * (1 - 0.5 * dimRest) * pop})`;
+      const s = (1 + 1.6 * depth) * pop * Math.sqrt(cam.z);
+      ctx.fillRect(px - s / 2, py - s / 2, s, s);
+    }
+    if (t > B.anchors && t < B.measure) {
+      text(`${shown.toLocaleString('en-US')} reference points`, GX, GY + GR + 44, { size: 22, mono: true, color: MUTED, align: 'center', alpha: win(t, B.anchors, B.measure, 0.3) });
+    }
+
+    // rays from each word to its closest points
+    TOKENS.forEach((tk, i) => {
+      const v = view(tk.v, t);
+      const [tx, ty] = cam.map(GX + v[0] * GR, GY - v[1] * GR);
+      const front = v[2] > -0.1 ? 1 : 0.3;
+      tk.near.forEach(([, j]) => {
+        const lp = lit.get(j) || 0;
+        if (lp <= 0) return;
+        const [ax, ay] = proj[j];
+        ctx.strokeStyle = `rgba(254,79,2,${0.6 * lp * front})`;
+        ctx.lineWidth = 1.5 + 0.4 * (cam.z - 1);
+        ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(lerp(tx, ax, lp), lerp(ty, ay, lp)); ctx.stroke();
+      });
+    });
+    lit.forEach((lp, j) => {
+      const [px, py, z] = proj[j];
+      const s = (4 + 5 * easeOut(lp)) * Math.sqrt(cam.z);
+      ctx.fillStyle = ORANGE;
+      ctx.globalAlpha = a * ga * (z > -0.1 ? 1 : 0.45);
+      ctx.fillRect(px - s / 2, py - s / 2, s, s);
+    });
+    ctx.globalAlpha = a * ga;
+
+    // the words themselves, popping in one by one
+    TOKENS.forEach((tk, i) => {
+      const land = easeOut(prog(t, B.words + 0.3 + i * 0.45, B.words + 0.8 + i * 0.45));
+      if (land <= 0) return;
+      const v = view(tk.v, t);
+      const [tx, ty] = cam.map(GX + v[0] * GR, GY - v[1] * GR);
+      const front = v[2] > -0.1 ? 1 : 0.3;
+      const al = land * front;
+      ctx.save();
+      ctx.globalAlpha *= al;
+      ctx.fillStyle = INK;
+      ctx.fillRect(tx - 7, ty - 7, 14, 14);
+      ctx.strokeStyle = BG; ctx.lineWidth = 2; ctx.strokeRect(tx - 7, ty - 7, 14, 14);
+      const lw = measure(tk.w, 24, 500, true) + 24;
+      ctx.fillStyle = 'rgba(20,17,15,0.92)';
+      ctx.fillRect(tx - lw / 2, ty - 58, lw, 36);
+      ctx.strokeStyle = 'rgba(244,239,233,0.5)'; ctx.lineWidth = 1;
+      ctx.strokeRect(tx - lw / 2 + 0.5, ty - 57.5, lw - 1, 35);
+      ctx.fillStyle = 'rgba(244,239,233,0.5)';
+      ctx.fillRect(tx - 0.5, ty - 22, 1, 15);
+      ctx.restore();
+      text(tk.w, tx, ty - 39, { size: 24, weight: 500, mono: true, baseline: 'middle', align: 'center', alpha: a * ga * al });
+    });
+    ctx.restore();
+
+    // closeness panel for apollo: the ranked values, then the 2,040 dropped ones
+    const pa = win(t, RAY0 - 0.2, B.every + 0.4, 0.4);
+    if (pa > 0) {
+      const px = 640, py = 715, pw = 320, rowH = 26;
+      ctx.save();
+      ctx.globalAlpha = a * pa;
+      ctx.fillStyle = 'rgba(20,17,15,0.94)';
+      ctx.fillRect(px, py, pw, 50 + 9 * rowH + 14);
+      ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+      ctx.strokeRect(px + 0.5, py + 0.5, pw - 1, 50 + 9 * rowH + 13);
+      ctx.fillStyle = ORANGE;
+      for (const [cx, cy] of [[px, py], [px + pw, py], [px, py + 50 + 9 * rowH + 14], [px + pw, py + 50 + 9 * rowH + 14]]) ctx.fillRect(cx - 3, cy - 3, 6, 6);
+      ctx.restore();
+      text('CLOSENESS TO “apollo”', px + 18, py + 32, { size: 15, mono: true, color: MUTED, spacing: 1.5, alpha: a * pa });
+      TOKENS[0].near.forEach(([sim, j], n) => {
+        const ra = prog(t, RAY0 + n * RAY_STEP, RAY0 + n * RAY_STEP + 0.25);
+        if (ra <= 0) return;
+        const y = py + 64 + n * rowH;
+        text(`point ${String(j).padStart(4, '0')}`, px + 18, y, { size: 17, mono: true, alpha: a * pa * ra });
+        text(sim.toFixed(3), px + pw - 18, y, { size: 17, mono: true, color: ORANGE, align: 'right', alpha: a * pa * ra });
+      });
+      const da = prog(t, B.keep, B.keep + 0.4);
+      if (da > 0) {
+        const y = py + 64 + 8 * rowH;
+        text('2,040 others', px + 18, y, { size: 17, mono: true, color: MUTED, alpha: a * pa * da });
+        text('→ 0', px + pw - 18, y, { size: 17, mono: true, color: MUTED, align: 'right', alpha: a * pa * da });
+      }
+    }
+  }
+
+  // the query list: fills from the globe, then rises to sit above the document list
+  const sa = win(t, B.keep, B.end, 0.5);
+  if (sa > 0) {
+    const rise = ease(prog(t, B.compare + 0.2, B.compare + 1.2));
+    const qy = lerp(1080, 520, rise);
+    const dy = 800;
+    const comparing = prog(t, B.compare + 1.4, B.compare + 2.4);
+    const filled = strip(SX, qy, QSLOTS, {
+      alpha: sa, t, fillTime: slotTime, proj: rise < 0.02 ? proj : null,
+      color: comparing > 0 ? INK : ORANGE, shared: comparing > 0 ? SHARED : null,
+    });
+    text('QUERY · 2,048 SLOTS', SX, qy - 18, { size: 18, mono: true, color: MUTED, spacing: 2, alpha: sa });
+    text(`${filled} FILLED`, W - SX, qy - 18, { size: 18, mono: true, color: filled ? ORANGE : MUTED, spacing: 2, align: 'right', alpha: sa });
+
+    const da = prog(t, B.compare + 0.9, B.compare + 1.5);
+    if (da > 0) {
+      strip(SX, dy, DSLOTS, { alpha: sa * da, color: INK, shared: comparing > 0 ? SHARED : null });
+      text('DOCUMENT · 2,048 SLOTS', SX, dy - 18, { size: 18, mono: true, color: MUTED, spacing: 2, alpha: sa * da });
+      text(`${DSLOTS.size} FILLED`, W - SX, dy - 18, { size: 18, mono: true, color: MUTED, spacing: 2, align: 'right', alpha: sa * da });
+      // vertical hairlines link each shared slot
+      if (comparing > 0) {
+        ctx.save();
+        ctx.globalAlpha = a * sa * comparing;
+        ctx.strokeStyle = 'rgba(254,79,2,0.55)';
+        ctx.lineWidth = 1;
+        SHARED.forEach(j => {
+          const x = SX + (j % SC) * (CELL + CG) + CELL / 2;
+          const y1 = qy + Math.floor(j / SC) * (CELL + CG) + CELL;
+          const y2 = dy + Math.floor(j / SC) * (CELL + CG);
+          ctx.beginPath(); ctx.moveTo(x + 0.5, y1); ctx.lineTo(x + 0.5, lerp(y1, y2, ease(comparing))); ctx.stroke();
+        });
+        ctx.restore();
+        text(`${SHARED.size} SHARED SLOTS`, W / 2, 1010, { size: 26, mono: true, color: ORANGE, spacing: 2, align: 'center', alpha: sa * comparing });
+        text('Adding up the shared slots gives the match score.', W / 2, 1060, { size: 26, color: MUTED, align: 'center', alpha: sa * prog(t, B.compare + 2.4, B.compare + 3) });
+      }
+    }
+  }
+  ctx.restore();
+}
+
+// ---------- scene 4: proof (35–40) ----------
+function scene4(t) {
+  const a = win(t, 35, 40, 0.5);
+  if (a <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = a;
+  eyebrow('MS MARCO · 8.8M DOCUMENTS', 96, 330);
+  headline(['Search gets 5–8× faster,', 'without losing quality.'], 96, 440, { size: 76, colors: [ORANGE, INK] });
+
+  const rows = [
+    ['TopK', 39.9, ORANGE],
+    ['PLAID', 221, 'rgba(244,239,233,0.35)'],
+    ['MUVERA', 310, 'rgba(244,239,233,0.35)'],
+  ];
+  const max = 320, x0 = 96, bw = 888, y0 = 720, rowH = 130;
+  const cellW = 10, gap = 4, cellsMax = Math.floor(bw / (cellW + gap));
+  rows.forEach(([name, ms, color], i) => {
+    const p = ease(prog(t, 35.7 + i * 0.25, 36.9 + i * 0.25));
+    const y = y0 + i * rowH;
+    text(name, x0, y, { size: 26, weight: 500, color: i === 0 ? INK : MUTED });
+    text(`${(ms * p).toFixed(ms < 100 ? 1 : 0)} ms`, x0 + bw, y, { size: 26, mono: true, align: 'right', color: i === 0 ? ORANGE : MUTED });
+    const n = Math.round(cellsMax * ms / max * p);
+    for (let c = 0; c < cellsMax; c++) {
+      ctx.fillStyle = c < n ? color : 'rgba(255,255,255,0.05)';
+      ctx.fillRect(x0 + c * (cellW + gap), y + 22, cellW, 34);
+    }
+  });
+  text('Average time to return the top 100 results.', 96, 1150, { size: 22, mono: true, color: MUTED });
+  ctx.restore();
+}
+
+// ---------- scene 5: end card (40–41.5) ----------
+function scene5(t) {
+  const a = easeOut(prog(t, 39.8, 40.4)) * (1 - prog(t, 41.2, 41.5));
+  if (a <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = a;
+  if (logo.complete && logo.naturalWidth) ctx.drawImage(logo, W / 2 - 160, 560, 320, 90);
+  text('Multi-vector search is built into TopK.', W / 2, 760, { size: 40, weight: 440, align: 'center', spacing: -1 });
+  text('topk.io', W / 2, 830, { size: 26, mono: true, color: ORANGE, align: 'center', spacing: 1 });
+  ctx.restore();
+}
+
+function renderAt(t) {
+  ctx.globalAlpha = 1;
+  background();
+  if (t < 39.8) chrome(t);
+  scene1(t);
+  scene2(t);
+  scene3(t);
+  scene4(t);
+  scene5(t);
+}
+window.renderAt = renderAt;
+// used by render.mjs to step through frames
+window.seek = t => { tNow = t; renderAt(t); };
+window.DURATION = T;
+
+// ---------- playback ----------
+const params = new URLSearchParams(location.search);
+const playBtn = document.getElementById('play');
+const scrub = document.getElementById('scrub');
+const timeEl = document.getElementById('time');
+let playing = !params.has('t') && !params.has('export');
+let t0 = performance.now(), tNow = parseFloat(params.get('t') || '0');
+if (params.has('export')) document.body.classList.add('export');
+playBtn.textContent = playing ? 'Pause' : 'Play';
+playBtn.onclick = () => { playing = !playing; playBtn.textContent = playing ? 'Pause' : 'Play'; t0 = performance.now() - tNow * 1000; };
+scrub.oninput = () => { tNow = parseFloat(scrub.value); t0 = performance.now() - tNow * 1000; renderAt(tNow); };
+function loop(now) {
+  if (playing) tNow = ((now - t0) / 1000) % T;
+  renderAt(tNow);
+  scrub.value = tNow;
+  timeEl.textContent = tNow.toFixed(1) + 's';
+  requestAnimationFrame(loop);
+}
+document.fonts.ready.then(() => { t0 = performance.now() - tNow * 1000; requestAnimationFrame(loop); });
+</script>
+</body>
+</html>
