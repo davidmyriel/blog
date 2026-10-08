@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "preview": "python3 -m http.server 8765 --bind 127.0.0.1",
-    "render": "node render.mjs"
+    "render": "node render.mjs",
+    "short": "node short.mjs"
   },
   "devDependencies": {
     "ffmpeg-static": "^5.2.0",

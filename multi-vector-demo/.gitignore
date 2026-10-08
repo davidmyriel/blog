@@ -2,3 +2,4 @@ node_modules/
 .frames/
 *.mp4
 .DS_Store
+*.gif

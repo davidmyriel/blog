@@ -64,14 +64,14 @@
     width: 440px;
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
-    scrollbar-width: none;
   }
   /* darken the left side so the panel reads over a zoomed globe */
   .shade { position: fixed; inset: 0 auto 0 0; width: 620px; background: linear-gradient(90deg, var(--bg) 0, var(--bg) 62%, rgba(20,17,15,0)); pointer-events: none; }
-  /* centred when it fits; starts at the top (and scrolls) when it does not */
-  #content { margin-top: auto; }
-  nav { margin-bottom: auto; }
+  /* the text scrolls on its own; the buttons below it never move */
+  #content { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; }
+  #content::-webkit-scrollbar { display: none; }
+  /* spacers centre short steps and shrink to nothing when a step is long */
+  #content::before, #content::after { content: ''; flex: 1 1 0; }
   .eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; font-size: 13px; font-weight: 500; letter-spacing: 0.14em; color: var(--muted); }
   .eyebrow::before { content: ''; width: 6px; height: 6px; background: var(--orange); }
   h1 { margin: 0 0 16px; font-size: 40px; line-height: 1.08; font-weight: 440; letter-spacing: -1.6px; text-wrap: balance; }
@@ -129,7 +129,7 @@
   .k input { flex: 1; accent-color: var(--orange); }
   .k output { color: var(--ink); min-width: 2ch; text-align: right; }
 
-  nav { display: flex; align-items: center; gap: 14px; margin-top: 28px; position: sticky; bottom: 0; padding-top: 12px; background: var(--bg); }
+  nav { flex: none; display: flex; align-items: center; gap: 14px; padding-top: 24px; }
   nav button {
     font: 500 16px Geist, sans-serif;
     border: 1px solid var(--line-strong);
@@ -140,7 +140,7 @@
   }
   nav button:hover { border-color: var(--muted); }
   nav button:disabled { opacity: 0.3; cursor: default; }
-  nav #next { white-space: nowrap; background: var(--orange); border-color: var(--orange); color: #fff; padding: 13px 22px; }
+  nav #next { width: 148px; text-align: center; white-space: nowrap; background: var(--orange); border-color: var(--orange); color: #fff; padding: 13px 22px; }
   nav #next:hover { background: #ff6b2a; }
   .pips { display: flex; gap: 6px; flex: 1; justify-content: center; }
   .pips button { width: 10px; height: 10px; padding: 0; border: 1px solid var(--line-strong); background: transparent; }
@@ -185,8 +185,7 @@
     #panel {
       left: 12px; right: 12px; bottom: 12px; top: auto;
       width: auto;
-      max-height: 58vh;
-      overflow-y: auto;
+      height: 54vh;
       padding: 20px 18px 18px;
       background: var(--panel);
       border-top: 1px solid var(--line-strong);
@@ -199,8 +198,10 @@
     .lede { font-size: 15px; line-height: 1.5; }
     #extra { margin-top: 14px; }
     .chips span, .chips button { font-size: 13px; padding: 5px 9px; }
-    nav { margin-top: 18px; position: sticky; bottom: -18px; background: var(--panel); padding: 10px 0 0; }
+    #content::before, #content::after { display: none; }
+    nav { padding-top: 14px; border-top: 1px solid var(--line); margin-top: 10px; }
     nav button { padding: 11px 14px; font-size: 15px; }
+    nav #next { width: 128px; }
     .keys { display: none; }
   }
 </style>
