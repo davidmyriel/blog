@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Multi-vector Globe</title>
+<meta name="description" content="Drag the globe to see how multi-vector search turns every word into a few points on a sphere." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #14110f;
+    --ink: #f4efe9;
+    --muted: #8f857c;
+    --line: rgba(255, 255, 255, 0.1);
+    --orange: #fe4f02;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Geist, system-ui, sans-serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* dark lattice, fading toward the edges */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
+    background-size: 54px 54px;
+    mask-image: radial-gradient(circle at 50% 50%, black 30%, transparent 85%);
+    pointer-events: none;
+  }
+  .frame {
+    position: fixed;
+    inset: 24px;
+    border: 1px solid var(--line);
+    pointer-events: none;
+  }
+  .frame i { position: absolute; width: 8px; height: 8px; background: var(--orange); }
+  .frame i:nth-child(1) { left: -4px; top: -4px; }
+  .frame i:nth-child(2) { right: -4px; top: -4px; }
+  .frame i:nth-child(3) { left: -4px; bottom: -4px; }
+  .frame i:nth-child(4) { right: -4px; bottom: -4px; }
+
+  #globe { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  #globe.dragging { cursor: grabbing; }
+  #globe.pointing { cursor: pointer; }
+
+  .ui { position: fixed; inset: 24px; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: 32px 36px; }
+  /* only real controls catch the pointer; everything else passes through to the globe */
+  .ui a, .ui button, .ui input, .ui label { pointer-events: auto; }
+  header { display: flex; justify-content: space-between; align-items: center; }
+  header img { height: 26px; display: block; }
+  .mono { font-family: 'Geist Mono', monospace; }
+  header a { color: var(--muted); text-decoration: none; font-size: 14px; letter-spacing: 0.04em; }
+  header a:hover { color: var(--ink); }
+
+  .intro { margin-top: 48px; max-width: 460px; pointer-events: none; }
+  .eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; font-size: 13px; font-weight: 500; letter-spacing: 0.14em; color: var(--muted); }
+  .eyebrow::before { content: ''; width: 6px; height: 6px; background: var(--orange); }
+  h1 { margin: 0 0 14px; font-size: 44px; line-height: 1.08; font-weight: 440; letter-spacing: -1.8px; }
+  .lede { margin: 0; color: var(--muted); font-size: 17px; line-height: 1.5; }
+
+  .words { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .words button {
+    font: 500 15px 'Geist Mono', monospace;
+    color: var(--ink);
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.16);
+    padding: 8px 14px;
+    cursor: pointer;
+  }
+  .words button:hover { border-color: rgba(254,79,2,0.6); }
+  .words button[aria-pressed='true'] { background: rgba(254,79,2,0.14); border-color: var(--orange); }
+
+  footer { display: grid; grid-template-columns: 1fr auto; gap: 28px; align-items: end; }
+  .slots { max-width: 560px; }
+  .slots .row { display: flex; justify-content: space-between; font-size: 12px; letter-spacing: 0.14em; color: var(--muted); margin-bottom: 10px; }
+  .slots .row b { color: var(--orange); font-weight: 500; }
+  #strip { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  .k { display: flex; align-items: center; gap: 12px; margin-top: 16px; font-size: 13px; color: var(--muted); letter-spacing: 0.06em; }
+  .k input { flex: 1; max-width: 220px; accent-color: var(--orange); }
+  .k output { color: var(--ink); min-width: 2ch; }
+
+  .how {
+    display: inline-flex; align-items: center; gap: 14px;
+    padding: 18px 24px;
+    background: var(--orange);
+    color: #fff;
+    text-decoration: none;
+    font-size: 18px; font-weight: 500;
+    white-space: nowrap;
+  }
+  .how:hover { background: #ff6b2a; }
+  .how span { font-family: 'Geist Mono', monospace; }
+
+  .tip {
+    position: fixed;
+    pointer-events: none;
+    padding: 8px 12px;
+    background: rgba(20,17,15,0.94);
+    border: 1px solid rgba(255,255,255,0.16);
+    font: 13px 'Geist Mono', monospace;
+    color: var(--ink);
+    white-space: nowrap;
+    transform: translate(14px, -50%);
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .tip b { color: var(--orange); font-weight: 500; }
+  .hint { font-size: 12px; color: var(--muted); letter-spacing: 0.1em; margin: 14px 0 0; }
+
+  @media (max-width: 760px) {
+    .frame { inset: 12px; }
+    .ui { inset: 12px; padding: 20px 16px; }
+    .intro { margin-top: 20px; }
+    h1 { font-size: 30px; letter-spacing: -1px; }
+    .lede { font-size: 15px; }
+    .words button { font-size: 13px; padding: 6px 10px; }
+    footer { grid-template-columns: 1fr; gap: 16px; }
+    .how { justify-content: center; padding: 15px 20px; font-size: 16px; }
+    .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="globe" aria-label="Interactive globe of word points and reference points"></canvas>
+<div class="frame"><i></i><i></i><i></i><i></i></div>
+<div class="ui">
+  <div>
+    <header>
+      <img id="logo" alt="TopK" />
+      <a class="mono" href="https://topk.io">topk.io</a>
+    </header>
+    <div class="intro">
+      <p class="eyebrow mono">MULTI-VECTOR SEARCH</p>
+      <h1>Every word is a point on this globe.</h1>
+      <p class="lede">Drag to turn it, scroll to zoom. Pick a word to see the reference points closest to it.</p>
+      <div class="words" id="words"></div>
+      <p class="hint mono">HOVER A POINT TO INSPECT IT</p>
+    </div>
+  </div>
+  <footer>
+    <div class="slots">
+      <div class="row mono"><span>QUERY · 2,048 SLOTS</span><b id="filled">0 FILLED</b></div>
+      <canvas id="strip" width="895" height="111"></canvas>
+      <label class="k mono">CLOSEST POINTS PER WORD <input id="k" type="range" min="1" max="32" value="8" /> <output id="kv">8</output></label>
+    </div>
+    <a class="how" href="/multi-vector-demo/">How does this work? <span>→</span></a>
+  </footer>
+</div>
+<div class="tip" id="tip"></div>
+<script>
+const ORANGE = '#fe4f02', INK = '#f4efe9', BG = '#14110f';
+document.getElementById('logo').src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwMCIgaGVpZ2h0PSI1NjAiIHZpZXdCb3g9IjAgMCAyMDAwIDU2MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIyMzAiIHk9IjExNSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMjMwIiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjIzMCIgeT0iMzQ1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIyMzAiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTE5MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTMwNSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTE5MCIgeT0iMjMwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxMzA1IiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjE0MjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjE0MjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjEwNzUiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxMDc1IiB5PSIxMTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjEwNzUiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTQyMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTQyMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTQyMCIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxNDIwIiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjEwNzUiIHk9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI3MTAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjgyNSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI1OTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjU5NSIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI1OTUiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iNTk1IiB5PSIzNDUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjU5NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjcxMCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI4MjUiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSI0NjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjU5NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSIxMTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgeT0iMjMwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSI0NjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSI0NjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSIzNDUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxNTU1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8cmVjdCB4PSIxNTU1IiB5PSIxMTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE1NTUiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNGRTUwMDAiLz4KPHJlY3QgeD0iMTc4NSIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8cmVjdCB4PSIxNjcwIiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE5MDAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE5MDAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE3ODUiIHk9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNGRTUwMDAiLz4KPHJlY3QgeD0iMTkwMCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8cmVjdCB4PSIxNTU1IiB5PSIzNDUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE1NTUiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNGRTUwMDAiLz4KPHJlY3QgeD0iMTkwMCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8L3N2Zz4K';
+
+// ---------- data: 2,048 reference points and 5 query words on a unit sphere ----------
+function rng(seed) {
+  return () => {
+    seed |= 0; seed = seed + 0x6d2b79f5 | 0;
+    let r = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    r = r + Math.imul(r ^ r >>> 7, 61 | r) ^ r;
+    return ((r ^ r >>> 14) >>> 0) / 4294967296;
+  };
+}
+function gauss(r) { const u = Math.max(r(), 1e-9), v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+function unit(r) { const v = [gauss(r), gauss(r), gauss(r)]; const n = Math.hypot(...v); return v.map(x => x / n); }
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+const N = 2048;
+const r = rng(11);
+const ANCHORS = Array.from({ length: N }, () => unit(r));
+const WORDS = [
+  ['apollo', [-0.05, 0.05]], ['11', [0.45, -0.35]], ['landing', [-0.5, 0.3]], ['moon', [0.35, 0.45]], ['date', [-0.35, -0.5]],
+].map(([w, [x, y]]) => ({ w, v: [x, y, Math.sqrt(1 - x * x - y * y)] }));
+// each word's reference points, ranked by closeness
+WORDS.forEach(wd => {
+  wd.ranked = ANCHORS.map((a, j) => [dot(a, wd.v), j]).sort((p, q) => q[0] - p[0]).slice(0, 32);
+});
+
+// ---------- state ----------
+let K = 8;
+let selected = 0;          // index into WORDS, or -1 for all
+let zoom = 1;
+// orientation as a rotation matrix (rows), turned like a trackball
+let M = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+let spin = null;           // inertia: { axis, rate } in radians per ms
+let dragging = false, moved = 0, last = null, lastT = 0, idle = 0;
+let pointer = null;        // last mouse position over the globe, for hover
+let hover = null;          // { kind: 'word'|'point', i, x, y }
+const pointers = new Map();
+let pinchStart = null;
+
+// ---------- canvas setup ----------
+const cv = document.getElementById('globe');
+const ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1, CX = 0, CY = 0, R = 0;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const narrow = W < 760;
+  CX = narrow ? W / 2 : W * 0.58;
+  CY = narrow ? H * 0.56 : H * 0.5;
+  R = Math.min(narrow ? W * 0.4 : W * 0.3, H * (narrow ? 0.18 : 0.36));
+}
+addEventListener('resize', resize);
+resize();
+
+function rot(v) {
+  return [dot(M[0], v), dot(M[1], v), dot(M[2], v)];
+}
+// rotation matrix for angle a about unit axis u (Rodrigues)
+function axisAngle(u, a) {
+  const [x, y, z] = u, c = Math.cos(a), s = Math.sin(a), t = 1 - c;
+  return [
+    [t * x * x + c, t * x * y - s * z, t * x * z + s * y],
+    [t * x * y + s * z, t * y * y + c, t * y * z - s * x],
+    [t * x * z - s * y, t * y * z + s * x, t * z * z + c],
+  ];
+}
+function mul(A, B) {
+  return A.map(row => [0, 1, 2].map(j => row[0] * B[0][j] + row[1] * B[1][j] + row[2] * B[2][j]));
+}
+// re-orthonormalize now and then so repeated rotations don't drift
+function tidy() {
+  const n = v => { const l = Math.hypot(...v); return v.map(x => x / l); };
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const r0 = n(M[0]), r2 = n(cross(r0, M[1])), r1 = cross(r2, r0);
+  M = [r0, r1, r2];
+}
+function turn(axis, angle) {
+  const l = Math.hypot(...axis);
+  if (l < 1e-9 || Math.abs(angle) < 1e-9) return;
+  M = mul(axisAngle(axis.map(x => x / l), angle), M);
+}
+// a screen drag of (dx, dy) pixels: the surface under the cursor follows it
+function dragTurn(dx, dy) {
+  turn([dy, dx, 0], Math.hypot(dx, dy) / (R * zoom));
+}
+// start slightly tilted
+turn([1, 0, 0], 0.3); turn([0, 1, 0], -0.35);
+function project(v) {
+  const p = rot(v);
+  return [CX + p[0] * R * zoom, CY - p[1] * R * zoom, p[2]];
+}
+
+// ---------- word buttons ----------
+const wordsEl = document.getElementById('words');
+const allBtn = document.createElement('button');
+allBtn.textContent = 'all words';
+allBtn.onclick = () => select(-1);
+WORDS.forEach((wd, i) => {
+  const b = document.createElement('button');
+  b.textContent = wd.w;
+  b.onclick = () => select(i);
+  wordsEl.appendChild(b);
+});
+wordsEl.appendChild(allBtn);
+function select(i) {
+  selected = i;
+  [...wordsEl.children].forEach((b, k) => b.setAttribute('aria-pressed', String(k === i || (i === -1 && b === allBtn))));
+  // turn the globe so the chosen word faces the viewer
+  focus = i >= 0 ? WORDS[i].v : null;
+  spin = null;
+  // zoom in on one word so its closest points are easy to see
+  targetZoom = i >= 0 ? (W < 760 ? 1.4 : 1.6) : 1;
+  drawStrip();
+}
+let focus = null, targetZoom = null;
+
+const kIn = document.getElementById('k'), kOut = document.getElementById('kv');
+kIn.oninput = () => { K = +kIn.value; kOut.textContent = K; drawStrip(); };
+
+// ---------- the slot strip ----------
+const strip = document.getElementById('strip');
+const sctx = strip.getContext('2d');
+const SC = 128, CELL = 6, GAP = 1;
+function activeWords() { return selected >= 0 ? [WORDS[selected]] : WORDS; }
+function litSlots() {
+  const s = new Set();
+  activeWords().forEach(wd => wd.ranked.slice(0, K).forEach(([, j]) => s.add(j)));
+  return s;
+}
+function drawStrip() {
+  const lit = litSlots();
+  sctx.fillStyle = BG;
+  sctx.fillRect(0, 0, strip.width, strip.height);
+  for (let j = 0; j < N; j++) {
+    const x = (j % SC) * (CELL + GAP), y = Math.floor(j / SC) * (CELL + GAP);
+    sctx.fillStyle = lit.has(j) ? ORANGE : 'rgba(255,255,255,0.08)';
+    sctx.fillRect(x, y, CELL, CELL);
+  }
+  document.getElementById('filled').textContent = `${lit.size} FILLED`;
+}
+
+// ---------- input: drag, inertia, wheel and pinch zoom, hover ----------
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinchStart = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), zoom };
+  }
+  dragging = true; moved = 0; last = [e.clientX, e.clientY]; lastT = e.timeStamp; spin = null; focus = null;
+  cv.classList.add('dragging');
+});
+cv.addEventListener('pointermove', e => {
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pinchStart && pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    zoom = clampZoom(pinchStart.zoom * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinchStart.d);
+    targetZoom = null;
+    return;
+  }
+  pointer = [e.clientX, e.clientY];
+  if (dragging && last) {
+    const dx = e.clientX - last[0], dy = e.clientY - last[1];
+    const dt = Math.max(1, e.timeStamp - lastT);
+    moved += Math.abs(dx) + Math.abs(dy);
+    dragTurn(dx, dy);
+    // smoothed angular speed, so letting go carries the motion naturally
+    const rate = Math.hypot(dx, dy) / (R * zoom) / dt;
+    const prev = spin && spin.rate || 0;
+    spin = { axis: [dy, dx, 0], rate: Math.min(0.006, prev * 0.5 + rate * 0.5), t: e.timeStamp };
+    last = [e.clientX, e.clientY]; lastT = e.timeStamp;
+    idle = 0;
+  }
+});
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinchStart = null;
+  if (pointers.size) return;
+  if (dragging && moved < 6) {
+    spin = null;
+    const h = hitTest(e.clientX, e.clientY);
+    if (h && h.kind === 'word') select(h.i);
+  }
+  // only keep spinning if the mouse was still moving when released
+  if (spin && e.timeStamp - spin.t > 60) spin = null;
+  dragging = false; last = null;
+  cv.classList.remove('dragging');
+}
+cv.addEventListener('pointerup', endPointer);
+cv.addEventListener('pointercancel', endPointer);
+cv.addEventListener('pointerleave', () => { if (!dragging) { hover = null; pointer = null; } });
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoom = clampZoom(zoom * Math.exp(-e.deltaY * 0.0015));
+  targetZoom = null;
+  idle = 0;
+}, { passive: false });
+const clampZoom = z => Math.min(5, Math.max(0.7, z));
+
+function hitTest(x, y) {
+  for (let i = 0; i < WORDS.length; i++) {
+    const [px, py, z] = project(WORDS[i].v);
+    if (z > 0 && Math.abs(x - px) < 18 && Math.abs(y - py) < 18) return { kind: 'word', i, x: px, y: py };
+  }
+  let best = null, bd = 18 * 18;
+  for (let j = 0; j < N; j++) {
+    const [px, py, z] = project(ANCHORS[j]);
+    if (z < 0) continue;
+    const d = (px - x) ** 2 + (py - y) ** 2;
+    if (d < bd) { bd = d; best = { kind: 'point', i: j, x: px, y: py }; }
+  }
+  return best;
+}
+
+// ---------- tooltip ----------
+const tip = document.getElementById('tip');
+function updateTip() {
+  if (!hover || dragging) { tip.style.opacity = 0; cv.classList.remove('pointing'); return; }
+  const v = hover.kind === 'word' ? WORDS[hover.i].v : ANCHORS[hover.i];
+  const [x, y, z] = project(v);
+  if (z < 0) { tip.style.opacity = 0; return; }
+  if (hover.kind === 'word') {
+    tip.innerHTML = `“${WORDS[hover.i].w}” · tap to inspect`;
+    cv.classList.add('pointing');
+  } else {
+    // closeness to the chosen word, or to the nearest word when showing all
+    const ws = activeWords();
+    let bw = ws[0], bs = -2;
+    ws.forEach(wd => { const s = dot(wd.v, ANCHORS[hover.i]); if (s > bs) { bs = s; bw = wd; } });
+    const rank = bw.ranked.findIndex(([, j]) => j === hover.i);
+    const kept = rank > -1 && rank < K;
+    tip.innerHTML = `point ${String(hover.i).padStart(4, '0')} · closeness to “${bw.w}” <b>${bs.toFixed(3)}</b>${kept ? ` · kept, #${rank + 1}` : ' · set to 0'}`;
+    cv.classList.remove('pointing');
+  }
+  tip.style.transform = x > W - 440 ? 'translate(calc(-100% - 14px), -50%)' : 'translate(14px, -50%)';
+  tip.style.left = x + 'px';
+  tip.style.top = y + 'px';
+  tip.style.opacity = 1;
+}
+
+// ---------- render ----------
+function frame() {
+  idle += 1 / 60;
+  if (targetZoom !== null) {
+    zoom += (targetZoom - zoom) * 0.08;
+    if (Math.abs(targetZoom - zoom) < 0.002) targetZoom = null;
+  }
+  if (!dragging) {
+    if (focus) {
+      // ease the chosen word to the front along the shortest path
+      const p = rot(focus);
+      const angle = Math.acos(Math.min(1, p[2]));
+      turn([-p[1], p[0], 0], -angle * 0.1);
+      if (angle < 0.002) focus = null;
+    } else if (spin) {
+      turn(spin.axis, spin.rate * 16);
+      spin.rate *= 0.95;
+      if (spin.rate < 1e-5) spin = null;
+    } else if (idle > 4 && !pointer) {
+      turn([0, 1, 0], 0.0012); // gentle spin only when the mouse is elsewhere
+    }
+  }
+  tidy();
+  // keep the tooltip on whatever is under a resting cursor
+  if (pointer && !dragging) hover = hitTest(pointer[0], pointer[1]);
+
+  ctx.clearRect(0, 0, W, H);
+  const RZ = R * zoom;
+  const glow = ctx.createRadialGradient(CX, CY, RZ * 0.2, CX, CY, RZ * 1.3);
+  glow.addColorStop(0, 'rgba(254,79,2,0.08)');
+  glow.addColorStop(1, 'rgba(254,79,2,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(CX, CY, RZ * 1.3, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(CX, CY, RZ, 0, Math.PI * 2); ctx.stroke();
+
+  // latitude and longitude rings, front halves only
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  const ring = f => {
+    ctx.beginPath();
+    let pen = false;
+    for (let s = 0; s <= 96; s++) {
+      const [x, y, z] = project(f(s / 96 * Math.PI * 2));
+      if (z < 0) { pen = false; continue; }
+      pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      pen = true;
+    }
+    ctx.stroke();
+  };
+  for (let k = -2; k <= 2; k++) { const lat = k * 0.5; ring(ph => [Math.cos(lat) * Math.cos(ph), Math.sin(lat), Math.cos(lat) * Math.sin(ph)]); }
+  for (let k = 0; k < 6; k++) { const lon = k * Math.PI / 6; ring(th => [Math.cos(th) * Math.cos(lon), Math.sin(th), Math.cos(th) * Math.sin(lon)]); }
+
+  // reference points
+  const ws = activeWords();
+  const lit = new Map();
+  ws.forEach(wd => wd.ranked.slice(0, K).forEach(([, j]) => lit.set(j, wd)));
+  const zs = Math.sqrt(zoom);
+  for (let j = 0; j < N; j++) {
+    if (lit.has(j)) continue;
+    const [x, y, z] = project(ANCHORS[j]);
+    const depth = (z + 1) / 2;
+    ctx.fillStyle = `rgba(244,239,233,${0.06 + 0.4 * depth})`;
+    const s = (0.9 + 1.6 * depth) * zs;
+    ctx.fillRect(x - s / 2, y - s / 2, s, s);
+  }
+
+  // rays and kept points
+  ws.forEach(wd => {
+    const [tx, ty, tz] = project(wd.v);
+    wd.ranked.slice(0, K).forEach(([, j]) => {
+      const [x, y, z] = project(ANCHORS[j]);
+      const front = Math.min(tz, z) > -0.05 ? 1 : 0.25;
+      ctx.strokeStyle = `rgba(254,79,2,${0.55 * front})`;
+      ctx.lineWidth = 1.2 + 0.25 * (zoom - 1);
+      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(x, y); ctx.stroke();
+    });
+  });
+  lit.forEach((wd, j) => {
+    const [x, y, z] = project(ANCHORS[j]);
+    ctx.globalAlpha = z > -0.05 ? 1 : 0.35;
+    const s = 5 * zs;
+    ctx.fillStyle = ORANGE;
+    ctx.fillRect(x - s / 2, y - s / 2, s, s);
+  });
+  ctx.globalAlpha = 1;
+
+  // hovered point ring
+  if (hover && hover.kind === 'point' && !dragging) {
+    const [x, y, z] = project(ANCHORS[hover.i]);
+    if (z > 0) { ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.strokeRect(x - 7, y - 7, 14, 14); }
+  }
+
+  // words, with labels; back-facing words fade
+  WORDS.forEach((wd, i) => {
+    const [x, y, z] = project(wd.v);
+    const on = selected === -1 || selected === i;
+    ctx.globalAlpha = (z > -0.05 ? 1 : 0.25) * (on ? 1 : 0.45);
+    ctx.fillStyle = INK;
+    ctx.fillRect(x - 7, y - 7, 14, 14);
+    ctx.strokeStyle = BG; ctx.lineWidth = 2; ctx.strokeRect(x - 7, y - 7, 14, 14);
+    ctx.font = "500 14px 'Geist Mono', monospace";
+    const lw = ctx.measureText(wd.w).width + 20;
+    ctx.fillStyle = 'rgba(20,17,15,0.92)';
+    ctx.fillRect(x - lw / 2, y - 44, lw, 28);
+    ctx.strokeStyle = on && selected !== -1 ? ORANGE : 'rgba(244,239,233,0.45)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - lw / 2 + 0.5, y - 43.5, lw - 1, 27);
+    ctx.fillStyle = 'rgba(244,239,233,0.45)';
+    ctx.fillRect(x - 0.5, y - 16, 1, 9);
+    ctx.fillStyle = INK;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(wd.w, x, y - 29);
+  });
+  ctx.globalAlpha = 1;
+
+  updateTip();
+  requestAnimationFrame(frame);
+}
+
+select(0);
+document.fonts.ready.then(() => requestAnimationFrame(frame));
+</script>
+</body>
+</html>

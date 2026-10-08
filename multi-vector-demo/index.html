@@ -17,13 +17,13 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #0c0a09; color: var(--ink); font-family: Geist, system-ui, sans-serif; }
   body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; }
-  canvas { display: block; height: calc(100vh - 90px); max-width: 100%; aspect-ratio: 1080 / 1350; }
+  canvas { display: block; width: min(100%, calc((100vh - 90px) * 0.8)); height: auto; }
   .controls { display: flex; gap: 10px; align-items: center; width: min(100%, 720px); font: 12px 'Geist Mono', monospace; color: var(--muted); }
   .controls button { font: inherit; color: var(--ink); background: #221d1a; border: 1px solid #3a332e; padding: 6px 12px; cursor: pointer; }
   .controls input { flex: 1; accent-color: var(--orange); }
   body.export { padding: 0; background: var(--bg); }
   body.export .controls { display: none; }
-  body.export canvas { height: 100vh; }
+  body.export canvas { width: min(100vw, 80vh); }
 </style>
 </head>
 <body>
