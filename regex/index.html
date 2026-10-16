@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>How TopK Searches Regex</title>
+<meta name="description" content="A step-by-step, interactive tour of how TopK uses a sparse n-gram index to make regex search fast." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #14110f;
+    --panel: rgba(20, 17, 15, 0.94);
+    --ink: #f4efe9;
+    --muted: #8f857c;
+    --line: rgba(255, 255, 255, 0.1);
+    --line-strong: rgba(255, 255, 255, 0.18);
+    --orange: #fe4f02;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Geist, system-ui, sans-serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* dark lattice, fading toward the edges */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
+    background-size: 54px 54px;
+    mask-image: radial-gradient(circle at 60% 50%, black 30%, transparent 85%);
+    pointer-events: none;
+  }
+  .mono { font-family: 'Geist Mono', monospace; }
+  .frame { position: fixed; inset: 24px; border: 1px solid var(--line); pointer-events: none; }
+  .frame i { position: absolute; width: 8px; height: 8px; background: var(--orange); }
+  .frame i:nth-child(1) { left: -4px; top: -4px; }
+  .frame i:nth-child(2) { right: -4px; top: -4px; }
+  .frame i:nth-child(3) { left: -4px; bottom: -4px; }
+  .frame i:nth-child(4) { right: -4px; bottom: -4px; }
+
+  #globe { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  #globe.dragging { cursor: grabbing; }
+  #globe.pointing { cursor: pointer; }
+
+  header { position: fixed; top: 56px; left: 60px; right: 60px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
+  header img { height: 26px; display: block; }
+  header a { pointer-events: auto; color: var(--muted); text-decoration: none; font-size: 14px; letter-spacing: 0.04em; }
+  header a:hover { color: var(--ink); }
+
+  #panel {
+    position: fixed;
+    left: 60px;
+    top: 110px;
+    bottom: 56px;
+    width: 440px;
+    display: flex;
+    flex-direction: column;
+  }
+  /* darken the left side so the panel reads over a zoomed globe */
+  .shade { position: fixed; inset: 0 auto 0 0; width: 620px; background: linear-gradient(90deg, var(--bg) 0, var(--bg) 62%, rgba(20,17,15,0)); pointer-events: none; }
+  /* the text scrolls on its own; the buttons below it never move */
+  #content { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; }
+  #content::-webkit-scrollbar { display: none; }
+  /* spacers centre short steps and shrink to nothing when a step is long */
+  #content::before, #content::after { content: ''; flex: 1 1 0; }
+  .eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; font-size: 13px; font-weight: 500; letter-spacing: 0.14em; color: var(--muted); }
+  .eyebrow::before { content: ''; width: 6px; height: 6px; background: var(--orange); }
+  h1 { margin: 0 0 16px; font-size: 40px; line-height: 1.08; font-weight: 440; letter-spacing: -1.6px; text-wrap: balance; }
+  #panel.intro h1 { font-size: 54px; letter-spacing: -2.2px; }
+  .lede { margin: 0; color: var(--muted); font-size: 17px; line-height: 1.55; }
+  .lede b { color: var(--ink); font-weight: 500; }
+  .lede + .lede { margin-top: 12px; }
+  #extra { margin-top: 22px; }
+  #extra:empty { display: none; }
+  .step-in > * { animation: rise 0.45s cubic-bezier(.2,.7,.2,1) both; }
+  .step-in > *:nth-child(2) { animation-delay: 0.05s; }
+  .step-in > *:nth-child(3) { animation-delay: 0.1s; }
+  .step-in > *:nth-child(4) { animation-delay: 0.15s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips span, .chips button {
+    font: 500 15px 'Geist Mono', monospace;
+    color: var(--ink);
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--line-strong);
+    padding: 7px 13px;
+  }
+  .chips button { cursor: pointer; }
+  .chips button:hover { border-color: rgba(254,79,2,0.6); }
+  .chips button[aria-pressed='true'], .chips span.on { background: rgba(254,79,2,0.14); border-color: var(--orange); }
+  .chips span.doc { color: var(--muted); }
+
+  .card { position: relative; border: 1px solid var(--line-strong); background: var(--panel); padding: 16px 18px; }
+  .card::before, .card::after { content: ''; position: absolute; width: 6px; height: 6px; background: var(--orange); }
+  .card::before { left: -3px; top: -3px; }
+  .card::after { right: -3px; bottom: -3px; }
+  .card + .card { margin-top: 12px; }
+  .card h3 { margin: 0 0 10px; font: 500 12px 'Geist Mono', monospace; letter-spacing: 0.14em; color: var(--muted); }
+  .rows { font: 14px 'Geist Mono', monospace; }
+  .rows div { display: flex; justify-content: space-between; padding: 3px 0; }
+  .rows div b { color: var(--orange); font-weight: 500; }
+  .rows div.muted, .rows div.muted b { color: var(--muted); }
+  .rows div.gone { opacity: 0.35; text-decoration: line-through; }
+  .rows div { animation: rise 0.3s both; }
+
+  .strip-head { display: flex; justify-content: space-between; font: 500 12px 'Geist Mono', monospace; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 8px; }
+  .strip-head b { color: var(--orange); font-weight: 500; }
+  canvas.strip { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  .strip-wrap + .strip-wrap { margin-top: 14px; }
+
+  .bars { display: grid; gap: 10px; }
+  .bar { display: grid; grid-template-columns: 70px 1fr 64px; gap: 10px; align-items: center; font: 13px 'Geist Mono', monospace; color: var(--muted); }
+  .bar i { display: block; height: 10px; background: rgba(244,239,233,0.3); }
+  .bar.us { color: var(--ink); }
+  .bar.us i { background: var(--orange); }
+  .bar span:last-child { text-align: right; }
+
+  .k { display: flex; align-items: center; gap: 12px; margin-top: 14px; font: 13px 'Geist Mono', monospace; color: var(--muted); letter-spacing: 0.04em; }
+  .k input { flex: 1; accent-color: var(--orange); }
+  .k output { color: var(--ink); min-width: 2ch; text-align: right; }
+
+  nav { flex: none; display: flex; align-items: center; gap: 14px; padding-top: 24px; }
+  nav button {
+    font: 500 16px Geist, sans-serif;
+    border: 1px solid var(--line-strong);
+    background: transparent;
+    color: var(--ink);
+    padding: 13px 18px;
+    cursor: pointer;
+  }
+  nav button:hover { border-color: var(--muted); }
+  nav button:disabled { opacity: 0.3; cursor: default; }
+  nav #next { width: 148px; text-align: center; white-space: nowrap; background: var(--orange); border-color: var(--orange); color: #fff; padding: 13px 22px; }
+  nav #next:hover { background: #ff6b2a; }
+  .pips { display: flex; gap: 6px; flex: 1; justify-content: center; }
+  .pips button { width: 10px; height: 10px; padding: 0; border: 1px solid var(--line-strong); background: transparent; }
+  .pips button.on { background: var(--orange); border-color: var(--orange); }
+  .pips button.done { background: rgba(244,239,233,0.35); border-color: transparent; }
+  .links { display: flex; gap: 18px; margin-top: 16px; font-size: 15px; }
+  .links a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--orange); padding-bottom: 2px; }
+  .links a:hover { color: var(--orange); }
+
+  .tip {
+    position: fixed;
+    pointer-events: none;
+    padding: 8px 12px;
+    background: var(--panel);
+    border: 1px solid var(--line-strong);
+    font: 13px 'Geist Mono', monospace;
+    color: var(--ink);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .tip b { color: var(--orange); font-weight: 500; }
+  .note { position: fixed; right: 60px; bottom: 56px; margin: 0; font-size: 11px; letter-spacing: 0.12em; color: var(--muted); opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+  .note.on { opacity: 0.8; }
+  .compare > div { display: grid; grid-template-columns: 96px 1fr 64px; gap: 12px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+  .compare > div:first-child { border-top: 0; padding-top: 0; }
+  .compare .n { font: 500 14px 'Geist Mono', monospace; color: var(--ink); }
+  .compare em { font-style: normal; font-size: 13px; }
+  .compare .ms { font: 14px 'Geist Mono', monospace; text-align: right; }
+  .compare .us .n, .compare .us .ms, .compare .us em { color: var(--orange); }
+  .compare .us .how { color: var(--ink); }
+  .txt { margin: 0 0 14px; font-size: 15px; line-height: 1.5; color: var(--ink); }
+  .txt:last-of-type { margin-bottom: 0; }
+  .foot { margin: 12px 0 0; font: 12px 'Geist Mono', monospace; color: var(--muted); line-height: 1.5; }
+  .keys { margin-top: 14px; font: 12px 'Geist Mono', monospace; color: var(--muted); letter-spacing: 0.08em; }
+
+  @media (max-width: 760px) {
+    .frame { inset: 12px; }
+    header { top: 30px; left: 30px; right: 30px; }
+    header img { height: 22px; }
+    .shade { display: none; }
+    #panel {
+      left: 12px; right: 12px; bottom: 12px; top: auto;
+      width: auto;
+      height: 54vh;
+      padding: 20px 18px 18px;
+      background: var(--panel);
+      border-top: 1px solid var(--line-strong);
+    }
+    h1 { font-size: 26px; letter-spacing: -0.8px; margin-bottom: 10px; }
+    #panel.intro h1 { font-size: 32px; letter-spacing: -1.1px; }
+    .note { display: none; }
+    .compare > div { grid-template-columns: 80px 1fr 56px; font-size: 13px; }
+    .eyebrow { margin-bottom: 10px; font-size: 11px; }
+    .lede { font-size: 15px; line-height: 1.5; }
+    #extra { margin-top: 14px; }
+    .chips span, .chips button { font-size: 13px; padding: 5px 9px; }
+    #content::before, #content::after { display: none; }
+    nav { padding-top: 14px; border-top: 1px solid var(--line); margin-top: 10px; }
+    nav button { padding: 11px 14px; font-size: 15px; }
+    nav #next { width: 128px; }
+    .keys { display: none; }
+  }
+
+  /* regex tour additions */
+  .note { opacity: 0.8; }
+  .ink { color: var(--ink); }
+  .query { margin: 0; font-size: 22px; color: var(--orange); }
+  .rows .or { display: block; text-align: center; color: var(--muted); font-size: 12px; letter-spacing: 0.14em; padding: 6px 0; }
+  b.o { color: var(--orange); font-weight: 500; }
+  .rows.tight div { padding: 1px 0; font-size: 13px; }
+  .rows em { font-style: normal; color: var(--muted); margin-left: 6px; }
+  .rows div.on span, .rows div.on b { color: var(--orange); }
+  .txt.mono { font-family: 'Geist Mono', monospace; font-size: 13px; line-height: 1.6; color: var(--ink); word-break: break-word; }
+  .txt.small { font-size: 12px; color: var(--muted); margin-top: 12px; }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+  .flow span { border: 1px solid var(--line-strong); padding: 6px 10px; }
+  .flow span.on { border-color: var(--orange); color: var(--orange); }
+  .flow i { font-style: normal; color: var(--muted); }
+  .bench { display: grid; gap: 9px; }
+  .bench > div { display: grid; grid-template-columns: 24px 1fr 110px; gap: 10px; align-items: center; }
+  .bench .c { color: var(--muted); font-size: 13px; }
+  .bench .b { display: grid; gap: 3px; }
+  .bench .b i { display: block; height: 7px; background: rgba(244,239,233,0.35); }
+  .bench .b i.us { background: var(--orange); }
+  .bench .v { text-align: right; font-size: 13px; color: var(--orange); }
+  .bench .v em { font-style: normal; color: var(--muted); }
+  input.regex { width: 100%; font-size: 17px; color: var(--ink); background: rgba(255,255,255,0.03); border: 1px solid var(--orange); padding: 12px 14px; outline: none; margin-bottom: 12px; }
+  .hit { margin: 12px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted); border-left: 2px solid var(--line-strong); padding-left: 10px; }
+  .hit mark { background: rgba(254,79,2,0.25); color: var(--ink); }
+  .tip { white-space: normal; max-width: 380px; line-height: 1.45; }
+  .tipdoc { color: var(--muted); }
+  .tipdoc .hitword { color: var(--orange); font-weight: 500; }
+  @media (max-width: 760px) { .note { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="globe" aria-label="Grid of documents in the collection"></canvas>
+<div class="shade"></div>
+<div class="frame"><i></i><i></i><i></i><i></i></div>
+<header>
+  <img id="logo" alt="TopK" />
+  <a class="mono" href="https://topk.io">topk.io</a>
+</header>
+<section id="panel" aria-live="polite">
+  <div id="content">
+    <p class="eyebrow mono" id="eyebrow"></p>
+    <h1 id="title"></h1>
+    <div id="body"></div>
+    <div id="extra"></div>
+  </div>
+  <nav>
+    <button id="back" aria-label="Previous step">←</button>
+    <div class="pips" id="pips"></div>
+    <button id="next">Next →</button>
+  </nav>
+</section>
+<div class="tip" id="tip"></div>
+<p class="note mono on" id="note">TOPK'S BLOG AND DOCS</p>
+<script src="engine.js"></script>
+<script>
+const ORANGE = '#fe4f02', INK = '#f4efe9', MUTED = '#8f857c', BG = '#14110f';
+document.getElementById('logo').src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwMCIgaGVpZ2h0PSI1NjAiIHZpZXdCb3g9IjAgMCAyMDAwIDU2MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIyMzAiIHk9IjExNSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMjMwIiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjIzMCIgeT0iMzQ1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIyMzAiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTE5MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTMwNSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTE5MCIgeT0iMjMwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxMzA1IiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjE0MjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjE0MjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjEwNzUiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxMDc1IiB5PSIxMTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjEwNzUiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTQyMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTQyMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTQyMCIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxNDIwIiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjEwNzUiIHk9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI3MTAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjgyNSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI1OTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjU5NSIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI1OTUiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iNTk1IiB5PSIzNDUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjU5NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjcxMCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI4MjUiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSI0NjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjU5NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSIxMTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgeT0iMjMwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSI0NjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSI0NjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSIzNDUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxNTU1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8cmVjdCB4PSIxNTU1IiB5PSIxMTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE1NTUiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNGRTUwMDAiLz4KPHJlY3QgeD0iMTc4NSIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8cmVjdCB4PSIxNjcwIiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE5MDAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE5MDAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE3ODUiIHk9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNGRTUwMDAiLz4KPHJlY3QgeD0iMTkwMCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8cmVjdCB4PSIxNTU1IiB5PSIzNDUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE1NTUiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNGRTUwMDAiLz4KPHJlY3QgeD0iMTkwMCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8L3N2Zz4K';
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const ease = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const fmt = n => n.toLocaleString('en-US');
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const show = s => esc(s).replace(/ /g, '·');
+
+let DOCS = [], IDX = null, M = 0;
+const COLS = 48;                     // one row of the grid = one storage block of 48 documents
+
+// ================= the one search we follow, all numbers computed from the collection =================
+const QUERY = 'vector (search|database)';
+const ALTS = ['vector search', 'vector database'];   // what the pattern can match
+function postingLen(g) { return (IDX.postings.get(g) || []).length; }
+const leaves = e => e.op === 'gram' ? [e.g] : e.op === 'all' ? [] : e.xs.flatMap(leaves);
+const readCost = grams => [...new Set(grams)].reduce((s, g) => s + postingLen(g), 0);
+
+// ================= steps =================
+let STEPS = [];
+function defineSteps() {
+  const r = E.search(IDX, QUERY);
+  const tri = E.search(IDX, QUERY, s => E.trigrams(s));
+  const sparseRead = readCost(leaves(r.plan)), triRead = readCost(leaves(tri.plan));
+  const rows = Math.ceil(M / COLS);
+  const touched = new Set(r.candidates.map(i => Math.floor(i / COLS))).size;
+  const queryCard = `<div class="card"><h3>THE SEARCH</h3><p class="query mono">${esc(QUERY)}</p><p class="foot">Finds paragraphs that mention “vector search” or “vector database”.</p></div>`;
+
+  STEPS = [
+    {
+      eyebrow: 'REGEX SEARCH', title: 'How does TopK make regex search fast?', intro: true,
+      body: `<p class="lede">Agents search with regular expressions all the time. Let's follow one search from start to finish.</p><p class="lede">Each square on the right is one of ${fmt(M)} real paragraphs from TopK's blog and docs.</p>`,
+      extra: () => queryCard,
+      grid: { mode: 'idle' },
+    },
+    {
+      eyebrow: 'STEP 1', title: 'Without an index, the regex reads everything.',
+      body: `<p class="lede">The simple way is to run the regex on every paragraph. It finds the ${fmt(r.matches.length)} matches, but only after reading and testing all ${fmt(M)}.</p><p class="lede">With many agents searching at once, that work piles up.</p>`,
+      extra: () => `<div class="card"><h3>SCANNING</h3><div class="rows"><div><span>Regex runs</span><b id="scan-n">0</b></div><div class="muted"><span>Matches found</span><b id="scan-m">0</b></div></div></div>`,
+      grid: { mode: 'scan' },
+    },
+    {
+      eyebrow: 'STEP 2', title: 'TopK turns the regex into a checklist.',
+      body: '<p class="lede">Any match must contain certain pieces of text: all the pieces of “vector search”, or all the pieces of “vector database”.</p><p class="lede">The pieces are chosen by a fixed hash of each character pair, so the same text always yields the same pieces. That is what lets an index look them up.</p>',
+      extra: () => `<div class="card"><h3>EVERY MATCH CONTAINS</h3><div class="rows">${
+        ALTS.map((alt, k) => `${k ? '<div class="or mono">OR</div>' : ''}${E.covering(alt).map(g => `<div><span>“${show(g.text)}”</span><b>in ${fmt(postingLen(g.text))}</b></div>`).join('')}`).join('')
+      }</div></div>`,
+      stage: 'pieces',
+    },
+    {
+      eyebrow: 'STEP 3', title: 'The index finds paragraphs with every piece.',
+      body: `<p class="lede">For each piece, the index already knows which paragraphs contain it. Combining those lists leaves ${fmt(r.candidates.length)} candidates, without reading a single paragraph.</p>`,
+      extra: () => `<div class="card"><div class="rows">
+        <div><span>Candidates</span><b>${fmt(r.candidates.length)} of ${fmt(M)}</b></div>
+        <div class="muted"><span>Index entries read</span><b>${fmt(sparseRead)}</b></div>
+      </div><p class="foot">A classic three-letter index would read ${fmt(triRead)} entries and leave ${fmt(tri.candidates.length)} candidates.</p></div>`,
+      grid: { mode: 'cands' },
+    },
+    {
+      eyebrow: 'STEP 4', title: 'Only the candidates get the real regex.',
+      body: `<p class="lede">The regex runs on the ${fmt(r.candidates.length)} candidates and confirms ${fmt(r.matches.length)} matches. Blocks of paragraphs with no candidates are never read.</p><p class="lede">The index may let a few extras through, but it <b>never misses a match</b>.</p>`,
+      extra: () => `<div class="card"><div class="rows">
+        <div><span>Regex runs</span><b>${fmt(r.candidates.length)} instead of ${fmt(M)}</b></div>
+        <div><span>Matches</span><b>${fmt(r.matches.length)}</b></div>
+        <div class="muted"><span>Blocks skipped unread</span><b>${rows - touched} of ${rows}</b></div>
+      </div></div>
+      <div class="card"><h3>ON A REAL TOPK CLUSTER</h3><p class="txt">With 16 searches at once, the index handles <b class="o">553 queries per second</b>, against 10 for scanning: 55× the throughput.</p></div>`,
+      grid: { mode: 'blocks' },
+    },
+    {
+      eyebrow: 'TRY IT', title: 'Now try your own regex.',
+      body: '<p class="lede">Type any pattern. The checklist, the candidates and the matches update as you type.</p>',
+      extra: () => `
+        <input id="q" class="regex mono" value="${esc(QUERY)}" spellcheck="false" autocomplete="off" aria-label="Regular expression" />
+        <div class="chips" id="examples">${['multi-vector', '(?i)bm25', 'late interaction', 'p99', 'filter(s|ing)?', '\\d+ ms'].map(q => `<button>${esc(q)}</button>`).join('')}</div>
+        <div class="card" style="margin-top:14px"><div class="rows" id="live"></div><p class="txt mono small" id="plan"></p></div>
+        <div id="hits"></div>
+        <div class="links"><a href="/">How TopK's multi-vector search works →</a></div>`,
+      grid: { mode: 'live' },
+      after: () => wireTry(),
+    },
+  ];
+}
+
+// ================= step machine =================
+const state = { step: 0, t0: performance.now(), live: null };
+const panel = document.getElementById('panel'), content = document.getElementById('content');
+const pips = document.getElementById('pips'), back = document.getElementById('back'), next = document.getElementById('next');
+function go(i) {
+  i = clamp(i, 0, STEPS.length - 1);
+  const s = STEPS[i];
+  state.step = i; state.t0 = performance.now();
+  document.getElementById('eyebrow').textContent = s.eyebrow;
+  document.getElementById('title').textContent = s.title;
+  document.getElementById('body').innerHTML = s.body;
+  document.getElementById('extra').innerHTML = s.extra ? s.extra() : '';
+  panel.classList.toggle('intro', !!s.intro);
+  content.classList.remove('step-in'); void content.offsetWidth; content.classList.add('step-in');
+  content.scrollTop = 0;
+  [...pips.children].forEach((b, k) => { b.classList.toggle('on', k === i); b.classList.toggle('done', k < i); });
+  back.disabled = i === 0;
+  next.textContent = i === 0 ? 'Start →' : i === STEPS.length - 2 ? 'Try it →' : i === STEPS.length - 1 ? 'Start over' : 'Next →';
+  hover = null;
+  if (s.after) s.after();
+  history.replaceState(null, '', i ? `#${i}` : location.pathname);
+}
+back.onclick = () => go(state.step - 1);
+next.onclick = () => go(state.step === STEPS.length - 1 ? 0 : state.step + 1);
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); next.click(); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); go(state.step - 1); }
+});
+
+function wireTry() {
+  const input = document.getElementById('q');
+  const update = () => {
+    const q = input.value;
+    if (!q) { state.live = null; document.getElementById('live').innerHTML = ''; document.getElementById('plan').textContent = ''; document.getElementById('hits').innerHTML = ''; return; }
+    const r = E.search(IDX, q);
+    const t = E.search(IDX, q, s => E.trigrams(s));
+    state.live = r;
+    const err = r.regexError ? `<div class="muted"><span>Not a valid regex</span><b>—</b></div>` : '';
+    document.getElementById('live').innerHTML = err || `
+      <div><span>Regex runs</span><b>${fmt(r.candidates.length)} of ${fmt(M)}</b></div>
+      <div><span>Matches</span><b>${fmt(r.matches.length)}</b></div>
+      <div class="muted"><span>Extra candidates ruled out by the regex</span><b>${fmt(r.candidates.length - r.matches.length)}</b></div>
+      <div class="muted"><span>Trigram index would leave</span><b>${fmt(t.candidates.length)}</b></div>`;
+    document.getElementById('plan').textContent = r.planError ? `Pattern not understood by the planner (${r.planError}), so it falls back to a scan.` : 'Checklist: ' + E.describe(r.plan);
+    let re = null;
+    try { re = new RegExp(q.startsWith('(?i)') ? q.slice(4) : q, q.startsWith('(?i)') ? 'gi' : 'g'); } catch {}
+    document.getElementById('hits').innerHTML = re ? r.matches.slice(0, 3).map(i => `<p class="hit">${esc(DOCS[i]).replace(new RegExp(re.source.replace(/&/g, '&amp;'), re.flags), m => `<mark>${m}</mark>`)}</p>`).join('') : '';
+  };
+  input.oninput = update;
+  document.getElementById('examples').onclick = e => { const b = e.target.closest('button'); if (b) { input.value = b.textContent; update(); } };
+  update();
+}
+
+// ================= stage =================
+const cv = document.getElementById('globe');
+const ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1, SX = 0, SY = 0, SW = 0, SH = 0, CELL = 10, GAP = 3;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const narrow = W < 760;
+  // stage rectangle: right of the panel on desktop, above it on phones
+  if (narrow) { SX = 24; SW = W - 48; SY = 70; SH = H * 0.42 - 80; }
+  else { SX = 560; SW = W - 620; SY = 120; SH = H - 230; }
+  if (M) {
+    const rows = Math.ceil(M / COLS);
+    const step = Math.min(SW / COLS, SH / rows);
+    GAP = step > 9 ? 3 : 1;
+    CELL = Math.max(2, Math.floor(step - GAP));
+  }
+}
+addEventListener('resize', resize);
+function cellXY(i) {
+  const rows = Math.ceil(M / COLS);
+  const gw = COLS * (CELL + GAP) - GAP, gh = rows * (CELL + GAP) - GAP;
+  const ox = SX + (SW - gw) / 2, oy = SY + (SH - gh) / 2;
+  return [ox + (i % COLS) * (CELL + GAP), oy + Math.floor(i / COLS) * (CELL + GAP)];
+}
+
+let hover = null, pointer = null;
+cv.addEventListener('pointermove', e => { pointer = [e.clientX, e.clientY]; });
+cv.addEventListener('pointerleave', () => { pointer = null; hover = null; });
+cv.addEventListener('pointerdown', e => { if (e.pointerType !== 'mouse') pointer = [e.clientX, e.clientY]; });
+function hitCell(x, y) {
+  const [x0, y0] = cellXY(0);
+  const col = Math.floor((x - x0) / (CELL + GAP)), row = Math.floor((y - y0) / (CELL + GAP));
+  if (col < 0 || col >= COLS || row < 0) return null;
+  const i = row * COLS + col;
+  return i < M ? i : null;
+}
+const tip = document.getElementById('tip');
+// the pattern being searched right now, as a global JS regex
+function currentRegex() {
+  const input = document.getElementById('q');
+  const q = STEPS[state.step].grid.mode === 'live' && input ? input.value : QUERY;
+  try { return new RegExp(q.startsWith('(?i)') ? q.slice(4) : q, q.startsWith('(?i)') ? 'gi' : 'g'); } catch { return null; }
+}
+// what to colour in a hovered paragraph, as [start, end] spans:
+// the regex match, or on step 3 every checklist piece the index found (pieces overlap, so spans are merged)
+function regexSpans(text, re) { return [...text.matchAll(re)].filter(m => m[0].length).map(m => [m.index, m.index + m[0].length]); }
+function pieceSpans(text, pieces) {
+  const low = text.toLowerCase(), spans = [];
+  for (const g of pieces) for (let k = low.indexOf(g); k >= 0; k = low.indexOf(g, k + 1)) spans.push([k, k + g.length]);
+  spans.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const sp of spans) { const last = merged[merged.length - 1]; if (last && sp[0] <= last[1]) last[1] = Math.max(last[1], sp[1]); else merged.push(sp.slice()); }
+  return merged;
+}
+function highlightFor(i, st) {
+  const mode = STEPS[state.step].grid.mode;
+  if (mode === 'cands') return st === 2 ? pieceSpans(DOCS[i], [...new Set(leaves(searchOf(QUERY).plan))]) : null;
+  if (mode === 'scan' && st !== 3) return null; // not reached by the scan yet
+  const re = currentRegex();
+  if (!re) return null;
+  const spans = regexSpans(DOCS[i], re);
+  return spans.length ? spans : null;
+}
+// a short window of the paragraph, centred on the first highlight, with highlighted words coloured
+function excerpt(text, spans) {
+  const LEN = 140;
+  spans = spans || [];
+  const from = spans.length ? Math.max(0, Math.min(spans[0][0] - 40, text.length - LEN)) : 0;
+  const to = Math.min(text.length, from + LEN);
+  let out = '', at = from;
+  for (const [a, b] of spans) {
+    if (b <= from || a >= to) continue;
+    out += esc(text.slice(at, Math.max(at, a))) + `<b class="hitword">${esc(text.slice(Math.max(a, at), Math.min(b, to)))}</b>`;
+    at = Math.min(b, to);
+  }
+  out += esc(text.slice(at, to));
+  return (from > 0 ? '…' : '') + out + (to < text.length ? '…' : '');
+}
+function updateTip(states) {
+  const g = STEPS[state.step].grid;
+  if (!g || !pointer) { tip.style.opacity = 0; return; }
+  const i = hitCell(pointer[0], pointer[1]);
+  if (i === null) { tip.style.opacity = 0; return; }
+  const st = states ? states[i] : 0;
+  const mode = STEPS[state.step].grid.mode;
+  const tag = st === 3 ? '<b>match</b>' : st === 2 ? (mode === 'cands' ? 'candidate: contains every <b>piece</b>' : 'candidate') : st === 4 ? 'block skipped, never read' : st === 5 ? 'ruled out by the index' : '';
+  tip.innerHTML = `<span class="tipdoc">${excerpt(DOCS[i], highlightFor(i, st))}</span>${tag ? `<br>${tag}` : ''}`;
+  const [x, y] = cellXY(i);
+  tip.style.transform = x > W - 420 ? 'translate(calc(-100% - 12px), -50%)' : 'translate(16px, -50%)';
+  tip.style.left = x + CELL / 2 + 'px';
+  tip.style.top = y + CELL / 2 + 'px';
+  tip.style.opacity = 1;
+}
+
+// cell states: 0 idle, 1 scanned, 2 candidate (regex says no), 3 match, 4 skipped block, 5 ruled out by the index
+const cache = new Map();
+const searchOf = q => { if (!cache.has(q)) cache.set(q, E.search(IDX, q)); return cache.get(q); };
+const jitter = i => ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1;
+function gridStates(g, st) {
+  const s = new Uint8Array(M);
+  if (g.mode === 'idle') return s;
+  const r = g.mode === 'live' ? state.live : searchOf(QUERY);
+  if (!r) return s;
+  if (g.mode === 'scan') {
+    const matched = new Set(r.matches);
+    const upto = Math.floor(M * clamp((st - 0.4) / 5));
+    let m = 0;
+    for (let i = 0; i < upto; i++) { s[i] = matched.has(i) ? 3 : 1; if (matched.has(i)) m++; }
+    const n = document.getElementById('scan-n'), mm = document.getElementById('scan-m');
+    if (n) { n.textContent = `${fmt(upto)} of ${fmt(M)}`; mm.textContent = fmt(m); }
+    return s;
+  }
+  if (g.mode === 'cands') {
+    // documents without every piece drop away; nothing is read yet
+    const p = clamp((st - 0.3) / 1.2);
+    for (let i = 0; i < M; i++) if (jitter(i) < p) s[i] = 5;
+    r.candidates.forEach(i => s[i] = 2);
+    return s;
+  }
+  if (g.mode === 'blocks') {
+    const blocks = new Set(r.candidates.map(i => Math.floor(i / COLS)));
+    for (let i = 0; i < M; i++) s[i] = blocks.has(Math.floor(i / COLS)) ? 5 : 4;
+    r.candidates.forEach(i => s[i] = 2);
+    // the regex checks candidates one after another
+    const checked = Math.floor(r.candidates.length * clamp((st - 0.5) / 1.6));
+    const matched = new Set(r.matches);
+    r.candidates.slice(0, checked).forEach(i => { if (matched.has(i)) s[i] = 3; });
+    return s;
+  }
+  r.candidates.forEach(i => s[i] = 2);
+  r.matches.forEach(i => s[i] = 3);
+  return s;
+}
+
+function drawGrid(states, st) {
+  for (let i = 0; i < M; i++) {
+    const [x, y] = cellXY(i);
+    const v = states[i];
+    if (v === 3) ctx.fillStyle = ORANGE;
+    else if (v === 2) ctx.fillStyle = 'rgba(244,239,233,0.6)';
+    else if (v === 1) ctx.fillStyle = 'rgba(244,239,233,0.22)';
+    else if (v === 4) ctx.fillStyle = 'rgba(255,255,255,0.015)';
+    else if (v === 5) ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    else ctx.fillStyle = 'rgba(244,239,233,0.09)';
+    ctx.fillRect(x, y, CELL, CELL);
+  }
+  const mode = STEPS[state.step].grid.mode;
+  if (mode === 'idle') {
+    // a slow shimmer so the collection feels alive
+    const t = performance.now() / 1000;
+    for (let k = 0; k < 40; k++) {
+      const i = Math.floor(((Math.sin(k * 91.7 + Math.floor(t * 0.7 + k * 0.13) * 13.1) + 1) / 2) * M) % M;
+      const [x, y] = cellXY(i);
+      ctx.fillStyle = `rgba(254,79,2,${0.5 * Math.abs(Math.sin(t * 0.7 + k))})`;
+      ctx.fillRect(x, y, CELL, CELL);
+    }
+  }
+  if (mode === 'scan') {
+    const upto = Math.floor(M * clamp((st - 0.4) / 5));
+    if (upto > 0 && upto < M) {
+      const [x, y] = cellXY(upto);
+      ctx.strokeStyle = ORANGE; ctx.lineWidth = 2;
+      ctx.strokeRect(x - 2, y - 2, CELL + 4, CELL + 4);
+    }
+  }
+}
+
+// step 2: the two texts the pattern can match, with a bracket over every piece
+function drawPieces(st) {
+  const longest = Math.max(...ALTS.map(a => a.length));
+  const cw = Math.min(46, SW / (longest + 1));
+  const x0 = SX + (SW - cw * longest) / 2;
+  const small = cw < 30;
+  let delay = 0.3;
+  ALTS.forEach((alt, r) => {
+    const base = SY + SH * (r ? 0.8 : 0.42);
+    const chars = [...alt];
+    const ra = clamp((st - r * 0.3) / 0.4);
+    ctx.globalAlpha = ra;
+    ctx.font = `500 ${Math.round(cw * 0.5)}px 'Geist Mono', monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    chars.forEach((c, i) => {
+      ctx.fillStyle = 'rgba(255,255,255,0.05)';
+      ctx.fillRect(x0 + i * cw + 2, base, cw - 4, cw - 4);
+      ctx.fillStyle = INK;
+      ctx.fillText(c === ' ' ? '·' : c, x0 + i * cw + cw / 2, base + (cw - 4) / 2);
+    });
+    ctx.globalAlpha = 1;
+    // brackets on as many levels as needed so none overlap
+    const ends = [];
+    E.covering(alt).forEach(g => {
+      let lvl = 0;
+      while (ends[lvl] !== undefined && ends[lvl] > g.start) lvl++;
+      ends[lvl] = g.end;
+      const p = clamp((st - delay) / 0.35);
+      delay += 0.28;
+      if (p <= 0) return;
+      const xa = x0 + g.start * cw + 5, xb = x0 + g.end * cw - 5;
+      const y = base - 12 - lvl * (small ? 14 : 18);
+      ctx.strokeStyle = ORANGE; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(xa, base - 4); ctx.lineTo(xa, y); ctx.lineTo(xa + (xb - xa) * p, y);
+      if (p >= 1) ctx.lineTo(xb, base - 4);
+      ctx.stroke();
+    });
+    if (r === 0) {
+      ctx.globalAlpha = clamp((st - 0.6) / 0.4);
+      ctx.font = `500 ${small ? 12 : 15}px 'Geist Mono', monospace`;
+      ctx.fillStyle = MUTED; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('OR', SX + SW / 2, base + cw + (SH * 0.38 - cw) * 0.35);
+      ctx.globalAlpha = 1;
+    }
+  });
+  ctx.font = "11px 'Geist Mono', monospace"; ctx.fillStyle = MUTED; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('EACH BRACKET = ONE PIECE', x0, SY + SH * 0.8 + cw + 30);
+}
+
+// just for fun on the last step: a pixel magnifying glass that inspects the matches one by one
+function drawLens(t) {
+  const r = state.live;
+  if (!r || !r.matches.length) return;
+  const k = Math.floor(t / 1.1) % r.matches.length;
+  const p = ease(clamp((t % 1.1) / 0.5));
+  const [ax, ay] = cellXY(r.matches[(k + r.matches.length - 1) % r.matches.length]);
+  const [bx, by] = cellXY(r.matches[k]);
+  const x = ax + (bx - ax) * p + CELL / 2, y = ay + (by - ay) * p + CELL / 2;
+  const u = Math.max(3, CELL * 0.45);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = INK; ctx.lineWidth = Math.max(2, u * 0.55);
+  ctx.strokeRect(-u * 2.2, -u * 2.2, u * 4.4, u * 4.4);
+  ctx.fillStyle = INK;
+  for (let j = 0; j < 4; j++) ctx.fillRect(u * 2.2 + j * u * 0.8, u * 2.2 + j * u * 0.8, u * 1.1, u * 1.1);
+  ctx.restore();
+}
+
+function frame(now) {
+  const s = STEPS[state.step];
+  const st = (now - state.t0) / 1000;
+  ctx.clearRect(0, 0, W, H);
+  let states = null;
+  if (s.grid) {
+    states = gridStates(s.grid, st);
+    drawGrid(states, st);
+    if (s.grid.mode === 'live') drawLens(now / 1000);
+  } else if (s.stage === 'pieces') drawPieces(st);
+  updateTip(states);
+  requestAnimationFrame(frame);
+}
+
+// ================= boot =================
+const E = Engine;
+fetch('corpus.json').then(r => r.json()).then(docs => {
+  DOCS = docs; M = docs.length;
+  IDX = E.buildIndex(docs);
+  document.getElementById('note').textContent = `${fmt(M)} PARAGRAPHS FROM TOPK'S BLOG AND DOCS`;
+  defineSteps();
+  STEPS.forEach((_, i) => {
+    const b = document.createElement('button');
+    b.setAttribute('aria-label', i === 0 ? 'Start' : i === STEPS.length - 1 ? 'Try it' : `Step ${i}`);
+    b.onclick = () => go(i);
+    pips.appendChild(b);
+  });
+  resize();
+  go(clamp(parseInt(location.hash.slice(1)) || 0, 0, STEPS.length - 1));
+  document.fonts.ready.then(() => requestAnimationFrame(frame));
+});
+</script>
+</body>
+</html>
