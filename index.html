@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>How TopK Works</title>
-<meta name="description" content="A seven-step, interactive tour of how TopK makes multi-vector search fast." />
+<title>TopK Product Map</title>
+<meta name="description" content="Every part of TopK on one page: seven kinds of search, one query engine, one storage layer." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -17,17 +17,17 @@
     --line: rgba(255, 255, 255, 0.1);
     --line-strong: rgba(255, 255, 255, 0.18);
     --orange: #fe4f02;
+    --orange-soft: rgba(254, 79, 2, 0.12);
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; }
+  html, body { margin: 0; }
   body {
     background: var(--bg);
     color: var(--ink);
     font-family: Geist, system-ui, sans-serif;
-    overflow: hidden;
     -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
   }
-  /* dark lattice, fading toward the edges */
   body::before {
     content: '';
     position: fixed;
@@ -36,915 +36,449 @@
       linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
       linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
     background-size: 54px 54px;
-    mask-image: radial-gradient(circle at 60% 50%, black 30%, transparent 85%);
+    mask-image: radial-gradient(circle at 50% 30%, black 20%, transparent 80%);
     pointer-events: none;
+    z-index: -1;
   }
   .mono { font-family: 'Geist Mono', monospace; }
-  .frame { position: fixed; inset: 24px; border: 1px solid var(--line); pointer-events: none; }
-  .frame i { position: absolute; width: 8px; height: 8px; background: var(--orange); }
-  .frame i:nth-child(1) { left: -4px; top: -4px; }
-  .frame i:nth-child(2) { right: -4px; top: -4px; }
-  .frame i:nth-child(3) { left: -4px; bottom: -4px; }
-  .frame i:nth-child(4) { right: -4px; bottom: -4px; }
-
-  #globe { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
-  #globe.dragging { cursor: grabbing; }
-  #globe.pointing { cursor: pointer; }
-
-  header { position: fixed; top: 56px; left: 60px; right: 60px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
+  .wrap { max-width: 1440px; margin: 0 auto; padding: 40px 48px 64px; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 48px; }
   header img { height: 26px; display: block; }
-  header a { pointer-events: auto; color: var(--muted); text-decoration: none; font-size: 14px; letter-spacing: 0.04em; }
-  header a:hover { color: var(--ink); }
+  header nav { display: flex; gap: 22px; font: 14px 'Geist Mono', monospace; }
+  header nav a { color: var(--muted); text-decoration: none; }
+  header nav a:hover { color: var(--ink); }
 
-  #panel {
-    position: fixed;
-    left: 60px;
-    top: 110px;
-    bottom: 56px;
-    width: 440px;
-    display: flex;
-    flex-direction: column;
-  }
-  /* darken the left side so the panel reads over a zoomed globe */
-  .shade { position: fixed; inset: 0 auto 0 0; width: 620px; background: linear-gradient(90deg, var(--bg) 0, var(--bg) 62%, rgba(20,17,15,0)); pointer-events: none; }
-  /* the text scrolls on its own; the buttons below it never move */
-  #content { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; }
-  #content::-webkit-scrollbar { display: none; }
-  /* spacers centre short steps and shrink to nothing when a step is long */
-  #content::before, #content::after { content: ''; flex: 1 1 0; }
-  .eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; font-size: 13px; font-weight: 500; letter-spacing: 0.14em; color: var(--muted); }
+  .eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; font: 500 13px 'Geist Mono', monospace; letter-spacing: 0.14em; color: var(--muted); }
   .eyebrow::before { content: ''; width: 6px; height: 6px; background: var(--orange); }
-  h1 { margin: 0 0 16px; font-size: 40px; line-height: 1.08; font-weight: 440; letter-spacing: -1.6px; text-wrap: balance; }
-  #panel.intro h1 { font-size: 54px; letter-spacing: -2.2px; }
-  .lede { margin: 0; color: var(--muted); font-size: 17px; line-height: 1.55; }
+  h1 { margin: 0 0 14px; font-size: 52px; line-height: 1.06; font-weight: 440; letter-spacing: -2px; max-width: 900px; }
+  .lede { margin: 0; color: var(--muted); font-size: 18px; line-height: 1.55; max-width: 720px; }
   .lede b { color: var(--ink); font-weight: 500; }
-  .lede + .lede { margin-top: 12px; }
-  #extra { margin-top: 22px; }
-  #extra:empty { display: none; }
-  .step-in > * { animation: rise 0.45s cubic-bezier(.2,.7,.2,1) both; }
-  .step-in > *:nth-child(2) { animation-delay: 0.05s; }
-  .step-in > *:nth-child(3) { animation-delay: 0.1s; }
-  .step-in > *:nth-child(4) { animation-delay: 0.15s; }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; margin-top: 40px; align-items: start; }
+
+  /* ---------- the map ---------- */
+  .map-wrap { position: relative; }
+  .map { display: grid; grid-template-columns: 112px repeat(7, minmax(0, 1fr)); gap: 8px; position: relative; z-index: 1; }
+  /* the flow overlay sits behind the cards' borders but above the page */
+  #flow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+  #pixels { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: -1; }
+  /* entrance: cards rise in, row by row */
+  .node, .stat, .engine { animation: rise 0.55s cubic-bezier(.2,.7,.2,1) both; animation-delay: calc(var(--row, 0) * 70ms + var(--col, 0) * 25ms); }
   @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-  .chips span, .chips button {
-    font: 500 15px 'Geist Mono', monospace;
-    color: var(--ink);
-    background: rgba(255,255,255,0.03);
+  /* corner nodes on hover, in the TopK card style */
+  .node::before, .node > .c2 { content: ''; position: absolute; width: 6px; height: 6px; background: var(--orange); opacity: 0; transition: opacity 0.15s; }
+  .node::before { top: -3px; right: -3px; }
+  .node > .c2 { bottom: -3px; left: -3px; }
+  .node:hover::before, .node:hover > .c2, .node.on::before, .node.on > .c2 { opacity: 1; }
+  .node.on { box-shadow: 0 0 0 1px rgba(254,79,2,0.25), 0 0 28px rgba(254,79,2,0.12); }
+  .engine.live { box-shadow: 0 0 40px rgba(254,79,2,0.16); }
+  @media (prefers-reduced-motion: reduce) { .node, .stat, .engine { animation: none; } }
+  .rowlabel { font: 500 11px 'Geist Mono', monospace; letter-spacing: 0.12em; color: var(--muted); padding: 14px 8px 0 0; line-height: 1.5; }
+  .span { grid-column: 2 / -1; }
+  .node {
+    position: relative;
     border: 1px solid var(--line-strong);
-    padding: 7px 13px;
-  }
-  .chips button { cursor: pointer; }
-  .chips button:hover { border-color: rgba(254,79,2,0.6); }
-  .chips button[aria-pressed='true'], .chips span.on { background: rgba(254,79,2,0.14); border-color: var(--orange); }
-  .chips span.doc { color: var(--muted); }
-
-  .card { position: relative; border: 1px solid var(--line-strong); background: var(--panel); padding: 16px 18px; }
-  .card::before, .card::after { content: ''; position: absolute; width: 6px; height: 6px; background: var(--orange); }
-  .card::before { left: -3px; top: -3px; }
-  .card::after { right: -3px; bottom: -3px; }
-  .card + .card { margin-top: 12px; }
-  .card h3 { margin: 0 0 10px; font: 500 12px 'Geist Mono', monospace; letter-spacing: 0.14em; color: var(--muted); }
-  .rows { font: 14px 'Geist Mono', monospace; }
-  .rows div { display: flex; justify-content: space-between; padding: 3px 0; }
-  .rows div b { color: var(--orange); font-weight: 500; }
-  .rows div.muted, .rows div.muted b { color: var(--muted); }
-  .rows div.gone { opacity: 0.35; text-decoration: line-through; }
-  .rows div { animation: rise 0.3s both; }
-
-  .strip-head { display: flex; justify-content: space-between; font: 500 12px 'Geist Mono', monospace; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 8px; }
-  .strip-head b { color: var(--orange); font-weight: 500; }
-  canvas.strip { display: block; width: 100%; height: auto; image-rendering: pixelated; }
-  .strip-wrap + .strip-wrap { margin-top: 14px; }
-
-  .bars { display: grid; gap: 10px; }
-  .bar { display: grid; grid-template-columns: 70px 1fr 64px; gap: 10px; align-items: center; font: 13px 'Geist Mono', monospace; color: var(--muted); }
-  .bar i { display: block; height: 10px; background: rgba(244,239,233,0.3); }
-  .bar.us { color: var(--ink); }
-  .bar.us i { background: var(--orange); }
-  .bar span:last-child { text-align: right; }
-
-  .k { display: flex; align-items: center; gap: 12px; margin-top: 14px; font: 13px 'Geist Mono', monospace; color: var(--muted); letter-spacing: 0.04em; }
-  .k input { flex: 1; accent-color: var(--orange); }
-  .k output { color: var(--ink); min-width: 2ch; text-align: right; }
-
-  nav { flex: none; display: flex; align-items: center; gap: 14px; padding-top: 24px; }
-  nav button {
-    font: 500 16px Geist, sans-serif;
-    border: 1px solid var(--line-strong);
-    background: transparent;
-    color: var(--ink);
-    padding: 13px 18px;
-    cursor: pointer;
-  }
-  nav button:hover { border-color: var(--muted); }
-  nav button:disabled { opacity: 0.3; cursor: default; }
-  nav #next { width: 148px; text-align: center; white-space: nowrap; background: var(--orange); border-color: var(--orange); color: #fff; padding: 13px 22px; }
-  nav #next:hover { background: #ff6b2a; }
-  .pips { display: flex; gap: 6px; flex: 1; justify-content: center; }
-  .pips button { width: 10px; height: 10px; padding: 0; border: 1px solid var(--line-strong); background: transparent; }
-  .pips button.on { background: var(--orange); border-color: var(--orange); }
-  .pips button.done { background: rgba(244,239,233,0.35); border-color: transparent; }
-  .links { display: flex; gap: 18px; margin-top: 16px; font-size: 15px; }
-  .links a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--orange); padding-bottom: 2px; }
-  .links a:hover { color: var(--orange); }
-
-  .tip {
-    position: fixed;
-    pointer-events: none;
-    padding: 8px 12px;
     background: var(--panel);
-    border: 1px solid var(--line-strong);
-    font: 13px 'Geist Mono', monospace;
+    padding: 12px 12px 13px;
+    text-align: left;
     color: var(--ink);
-    white-space: nowrap;
-    opacity: 0;
-    transition: opacity 0.12s;
+    font: inherit;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, opacity 0.15s;
   }
-  .tip b { color: var(--orange); font-weight: 500; }
-  .note { position: fixed; right: 60px; bottom: 56px; margin: 0; font-size: 11px; letter-spacing: 0.12em; color: var(--muted); opacity: 0; transition: opacity 0.3s; pointer-events: none; }
-  .note.on { opacity: 0.8; }
-  .compare > div { display: grid; grid-template-columns: 96px 1fr 64px; gap: 12px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
-  .compare > div:first-child { border-top: 0; padding-top: 0; }
-  .compare .n { font: 500 14px 'Geist Mono', monospace; color: var(--ink); }
-  .compare em { font-style: normal; font-size: 13px; }
-  .compare .ms { font: 14px 'Geist Mono', monospace; text-align: right; }
-  .compare .us .n, .compare .us .ms, .compare .us em { color: var(--orange); }
-  .compare .us .how { color: var(--ink); }
-  .txt { margin: 0 0 14px; font-size: 15px; line-height: 1.5; color: var(--ink); }
-  .txt:last-of-type { margin-bottom: 0; }
-  .foot { margin: 12px 0 0; font: 12px 'Geist Mono', monospace; color: var(--muted); line-height: 1.5; }
-  .keys { margin-top: 14px; font: 12px 'Geist Mono', monospace; color: var(--muted); letter-spacing: 0.08em; }
+  .node:hover { border-color: rgba(254,79,2,0.55); }
+  .node.on { border-color: var(--orange); background: var(--orange-soft); }
+  .node.dim { opacity: 0.38; }
+  .node:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+  .node .k { display: block; font: 500 13px 'Geist Mono', monospace; color: var(--ink); overflow-wrap: normal; word-break: normal; }
+  .node .d { display: block; margin-top: 6px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+  .node.on .k { color: var(--orange); }
+  /* capability headers */
+  .cap { padding: 14px 12px; }
+  .cap .k { font: 500 15px Geist, sans-serif; }
+  .cap i { position: absolute; top: -4px; left: -4px; width: 7px; height: 7px; background: var(--orange); }
+  /* vertical hairline from each index down to its query function */
+  .col-link::after { content: ''; position: absolute; left: 50%; bottom: -9px; width: 1px; height: 9px; background: var(--line-strong); }
+  .col-link.on::after { background: var(--orange); }
 
-  @media (max-width: 760px) {
-    .frame { inset: 12px; }
-    header { top: 30px; left: 30px; right: 30px; }
-    header img { height: 22px; }
-    .shade { display: none; }
-    #panel {
-      left: 12px; right: 12px; bottom: 12px; top: auto;
-      width: auto;
-      height: 54vh;
-      padding: 20px 18px 18px;
-      background: var(--panel);
-      border-top: 1px solid var(--line-strong);
-    }
-    h1 { font-size: 26px; letter-spacing: -0.8px; margin-bottom: 10px; }
-    #panel.intro h1 { font-size: 32px; letter-spacing: -1.1px; }
-    .note { display: none; }
-    .compare > div { grid-template-columns: 80px 1fr 56px; font-size: 13px; }
-    .eyebrow { margin-bottom: 10px; font-size: 11px; }
-    .lede { font-size: 15px; line-height: 1.5; }
-    #extra { margin-top: 14px; }
-    .chips span, .chips button { font-size: 13px; padding: 5px 9px; }
-    #content::before, #content::after { display: none; }
-    nav { padding-top: 14px; border-top: 1px solid var(--line); margin-top: 10px; }
-    nav button { padding: 11px 14px; font-size: 15px; }
-    nav #next { width: 128px; }
-    .keys { display: none; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+  .bar .node { flex: 1 1 110px; }
+  .engine { margin-top: 44px; border: 1px solid var(--orange); background: rgba(254,79,2,0.06); padding: 16px; position: relative; }
+  .engine::before, .engine::after { content: ''; position: absolute; width: 7px; height: 7px; background: var(--orange); }
+  .engine::before { top: -4px; left: -4px; }
+  .engine::after { bottom: -4px; right: -4px; }
+  .engine-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
+  .engine-head b { font: 500 15px 'Geist Mono', monospace; color: var(--orange); }
+  .engine-head span { font-size: 14px; color: var(--muted); }
+  #combo { color: var(--ink); }
+  .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .flow .node { flex: 1 1 130px; }
+  .flow .arrow { color: var(--muted); font: 14px 'Geist Mono', monospace; flex: none; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .stat { border: 1px solid var(--line); padding: 14px 14px 12px; }
+  .stat b { display: block; font: 500 24px 'Geist Mono', monospace; color: var(--orange); letter-spacing: -0.5px; }
+  .stat span { display: block; margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+
+  /* ---------- detail panel ---------- */
+  aside { position: sticky; top: 24px; border: 1px solid var(--line-strong); background: var(--panel); padding: 22px 22px 20px; }
+  aside::before { content: ''; position: absolute; top: -4px; left: -4px; width: 7px; height: 7px; background: var(--orange); }
+  aside .eyebrow { margin-bottom: 12px; }
+  aside h2 { margin: 0 0 10px; font-size: 26px; line-height: 1.15; font-weight: 440; letter-spacing: -0.8px; }
+  aside p { margin: 0 0 12px; color: var(--muted); font-size: 15px; line-height: 1.55; }
+  aside p b { color: var(--ink); font-weight: 500; }
+  .api { margin: 14px 0; border-top: 1px solid var(--line); }
+  .api div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .api span { color: var(--muted); font-family: 'Geist Mono', monospace; font-size: 12px; letter-spacing: 0.06em; }
+  .api code { font: 13px 'Geist Mono', monospace; color: var(--ink); text-align: right; }
+  .links { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .links a { color: var(--ink); text-decoration: none; font-size: 14px; border-bottom: 1px solid var(--orange); align-self: flex-start; padding-bottom: 1px; }
+  .links a:hover { color: var(--orange); }
+  .hint { margin-top: 16px; font: 12px 'Geist Mono', monospace; color: var(--muted); letter-spacing: 0.06em; }
+  .foot { margin-top: 28px; font: 12px 'Geist Mono', monospace; color: var(--muted); line-height: 1.6; }
+  .foot a { color: var(--muted); }
+
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: 1fr; }
+    aside { position: static; }
+  }
+  @media (max-width: 860px) {
+    .wrap { padding: 24px 16px 48px; }
+    header { margin-bottom: 32px; flex-direction: column; align-items: flex-start; gap: 14px; }
+    header nav { gap: 16px; font-size: 13px; }
+    h1 { font-size: 34px; letter-spacing: -1.2px; }
+    .lede { font-size: 16px; }
+    /* on phones the map becomes one card per kind of search */
+    .map { grid-template-columns: 1fr; }
+    .rowlabel { padding: 18px 0 2px; }
+    .span { grid-column: 1; }
+    .caps-row, .idx-row, .fn-row { display: none; }
+    .stats { grid-template-columns: 1fr 1fr; }
+  }
+  .phone-caps { display: none; }
+  @media (max-width: 860px) {
+    .phone-caps { display: grid; gap: 8px; }
+    .phone-caps .card { border: 1px solid var(--line-strong); background: var(--panel); }
+    .phone-caps .card .node { border: 0; border-bottom: 1px solid var(--line); width: 100%; }
+    .phone-caps .card .node:last-child { border-bottom: 0; }
   }
 </style>
 </head>
 <body>
-<canvas id="globe" aria-label="Interactive globe showing words and reference points"></canvas>
-<div class="shade"></div>
-<div class="frame"><i></i><i></i><i></i><i></i></div>
-<header>
-  <img id="logo" alt="TopK" />
-  <a class="mono" href="https://topk.io">topk.io</a>
-</header>
-<section id="panel" aria-live="polite">
-  <div id="content">
-    <p class="eyebrow mono" id="eyebrow"></p>
-    <h1 id="title"></h1>
-    <div id="body"></div>
-    <div id="extra"></div>
+<canvas id="pixels" aria-hidden="true"></canvas>
+<div class="wrap">
+  <header>
+    <img id="logo" alt="TopK" />
+    <nav><a href="/multi-vector/">Multi-vector tour</a><a href="/regex/">Regex tour</a><a href="https://docs.topk.io">Docs</a></nav>
+  </header>
+
+  <p class="eyebrow">PRODUCT MAP</p>
+  <h1>Every kind of search, in one query.</h1>
+  <p class="lede">TopK is a hybrid search engine. Vector, multi-vector, semantic, keyword and regex search, metadata filters and custom scoring all run <b>in the same query, over the same data</b>. Click any piece to see what it does.</p>
+
+  <div class="layout">
+    <div>
+      <div class="map-wrap"><div class="map" id="map"></div><svg id="flow" aria-hidden="true"></svg></div>
+      <p class="foot">Sources: the TopK docs, the TopK SDKs in <a href="https://github.com/topk-io/topk">github.com/topk-io/topk</a>, and the TopK blog. Published numbers are from topk.io and the architecture docs.</p>
+    </div>
+    <aside id="detail" aria-live="polite"></aside>
   </div>
-  <nav>
-    <button id="back" aria-label="Previous step">←</button>
-    <div class="pips" id="pips"></div>
-    <button id="next">Next →</button>
-  </nav>
-</section>
-<div class="tip" id="tip"></div>
-<p class="note mono" id="note">3D SKETCH · REAL EMBEDDINGS HAVE 128 DIMENSIONS</p>
+</div>
+
 <script>
-const ORANGE = '#fe4f02', INK = '#f4efe9', MUTED = '#8f857c', BG = '#14110f';
+// old links to tour steps (vectorsearch.tech/#4) now live under /multi-vector/
+if (/^#\d+$/.test(location.hash)) location.replace('/multi-vector/' + location.hash);
 document.getElementById('logo').src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwMCIgaGVpZ2h0PSI1NjAiIHZpZXdCb3g9IjAgMCAyMDAwIDU2MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIyMzAiIHk9IjExNSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMjMwIiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjIzMCIgeT0iMzQ1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIyMzAiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTE5MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTMwNSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTE5MCIgeT0iMjMwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxMzA1IiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjE0MjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjE0MjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjEwNzUiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxMDc1IiB5PSIxMTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjEwNzUiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTQyMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTQyMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTQyMCIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxNDIwIiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjEwNzUiIHk9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iMTA3NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI3MTAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjgyNSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI1OTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjU5NSIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI1OTUiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iNTk1IiB5PSIzNDUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjU5NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjcxMCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI4MjUiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSI0NjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9IjU5NSIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSIxMTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgeT0iMjMwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSI0NjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSI0NjAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSI5NDAiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFREVERUQiLz4KPHJlY3QgeD0iOTQwIiB5PSIzNDUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRURFREVEIi8+CjxyZWN0IHg9Ijk0MCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0VERURFRCIvPgo8cmVjdCB4PSIxNTU1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8cmVjdCB4PSIxNTU1IiB5PSIxMTUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE1NTUiIHk9IjIzMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNGRTUwMDAiLz4KPHJlY3QgeD0iMTc4NSIgeT0iMTE1IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8cmVjdCB4PSIxNjcwIiB5PSIyMzAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE5MDAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE5MDAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE3ODUiIHk9IjM0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNGRTUwMDAiLz4KPHJlY3QgeD0iMTkwMCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8cmVjdCB4PSIxNTU1IiB5PSIzNDUiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRkU1MDAwIi8+CjxyZWN0IHg9IjE1NTUiIHk9IjQ2MCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNGRTUwMDAiLz4KPHJlY3QgeD0iMTkwMCIgeT0iNDYwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI0ZFNTAwMCIvPgo8L3N2Zz4K';
+const DOCS = 'https://docs.topk.io';
 
-// ================= data =================
-function rng(seed) {
-  return () => {
-    seed |= 0; seed = seed + 0x6d2b79f5 | 0;
-    let r = Math.imul(seed ^ seed >>> 15, 1 | seed);
-    r = r + Math.imul(r ^ r >>> 7, 61 | r) ^ r;
-    return ((r ^ r >>> 14) >>> 0) / 4294967296;
-  };
-}
-function gauss(r) { const u = Math.max(r(), 1e-9), v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
-function norm(v) { const n = Math.hypot(...v); return v.map(x => x / n); }
-function unit(r) { return norm([gauss(r), gauss(r), gauss(r)]); }
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
-
-const N = 2048, K_DEFAULT = 8;
-const ANCHORS = (() => { const r = rng(11); return Array.from({ length: N }, () => unit(r)); })();
-const rankAll = v => ANCHORS.map((a, j) => [dot(a, v), j]).sort((p, q) => q[0] - p[0]).slice(0, 64);
-
-// the query: five words placed on the front of the globe
-const WORDS = [
-  ['apollo', [-0.05, 0.05]], ['11', [0.45, -0.35]], ['landing', [-0.5, 0.3]], ['moon', [0.35, 0.45]], ['date', [-0.35, -0.5]],
-].map(([w, [x, y]]) => { const v = [x, y, Math.sqrt(1 - x * x - y * y)]; return { w, v, ranked: rankAll(v) }; });
-// a matching document: four words close in meaning to the query, plus unrelated ones
-const dr = rng(77);
-const nudge = (v, e) => norm(v.map(x => x + e * gauss(dr)));
-const DOC = [
-  ['Apollo', nudge(WORDS[0].v, 0.06)], ['11', nudge(WORDS[1].v, 0.06)], ['touched', nudge(WORDS[2].v, 0.09)],
-  ['Moon', nudge(WORDS[3].v, 0.06)], ['July', nudge(WORDS[4].v, 0.11)],
-  ['Armstrong', unit(dr)], ['Aldrin', unit(dr)], ['surface', unit(dr)], ['hours', unit(dr)],
-].map(([w, v]) => ({ w, v, ranked: rankAll(v) }));
-const CENTER = norm(WORDS.reduce((s, w) => s.map((x, i) => x + w.v[i]), [0, 0, 0]));
-
-// sparse encoding: each word keeps its K strongest values; queries add, documents average per slot
-function encode(words, K, mode) {
-  const sum = new Map(), cnt = new Map();
-  words.forEach(wd => wd.ranked.slice(0, K).forEach(([s, j]) => { sum.set(j, (sum.get(j) || 0) + s); cnt.set(j, (cnt.get(j) || 0) + 1); }));
-  if (mode === 'avg') sum.forEach((s, j) => sum.set(j, s / cnt.get(j)));
-  return sum;
-}
-const bestMatch = qw => DOC.reduce((b, d) => dot(qw.v, d.v) > dot(qw.v, b.v) ? d : b, DOC[0]);
-
-// ================= steps =================
-// a real 128-dimensional check: one token against 2,048 random landmarks, the way a ColBERT-style model sees it
-const SIM = (() => {
-  const r = rng(5), D = 128;
-  const q = norm(Array.from({ length: D }, () => gauss(r)));
-  const vals = [];
-  for (let j = 0; j < N; j++) {
-    const a = Array.from({ length: D }, () => gauss(r));
-    const n = Math.hypot(...a);
-    let s = 0;
-    for (let i = 0; i < D; i++) s += a[i] * q[i];
-    vals.push([s / n, j]);
-  }
-  vals.sort((x, y) => y[0] - x[0]);
-  const rest = vals.slice(8).map(v => v[0]).sort((a, b) => a - b);
-  return { top: vals.slice(0, 8), lo: rest[Math.floor(rest.length * 0.025)], hi: rest[Math.floor(rest.length * 0.975)] };
-})();
-const QC = CENTER;
-const DC = norm(DOC.reduce((s, w) => s.map((x, i) => x + w.v[i]), [0, 0, 0]));
-
-const STEPS = [
+// ---------- the seven kinds of search, each from its index (write) to its query function (read) ----------
+const CAPS = [
   {
-    eyebrow: 'MULTI-VECTOR SEARCH', title: 'How does TopK’s multi-vector search work?', intro: true,
-    body: '<p class="lede">If you use vector search today, you already know most of it. Here is what changes, in seven short steps.</p><p class="lede">You can drag the globe at any time.</p>',
-    globe: { anchors: 1, anchorAlpha: 0.6, spin: true, zoom: 1 },
+    id: 'dense', name: 'Vector search', short: 'Dense embeddings',
+    index: ['vector_index()', 'f8 to f32, u8, i8 and binary vectors'],
+    query: ['fn.vector_distance()', 'cosine, euclidean, dot product, hamming'],
+    body: 'Finds documents whose embedding is closest to the query embedding. You bring your own vectors, up to 16,384 dimensions, and pick the precision that fits your storage budget.',
+    api: [['Index', 'vector_index()'], ['Score', 'fn.vector_distance()'], ['Types', 'f8 · f16 · f32 · u8 · i8 · binary']],
+    links: [['Vector search guide', `${DOCS}/guides/vector-search`], ['Vector index reference', `${DOCS}/collections/manage#vector-index`]],
   },
   {
-    eyebrow: 'STEP 1', title: 'You know this part: one vector per document.',
-    body: '<p class="lede">Dense vector search squeezes a whole document into one vector, and your query into another. One dot product gives the score.</p><p class="lede">It is fast, but one vector has to summarize everything, so <b>specific details get blurred</b>.</p>',
-    extra: () => textCard(),
-    globe: { anchors: 0, dense: true, focus: norm([QC[0] + DC[0], QC[1] + DC[1], QC[2] + DC[2]]), zoom: 1.1 },
+    id: 'sparse', name: 'Sparse vectors', short: 'Learned term weights',
+    index: ['vector_index()', 'on f32 or u8 sparse vectors'],
+    query: ['fn.vector_distance()', 'dot product'],
+    body: 'Searches vectors where most values are zero, from learned sparse models like SPLADE. The search is exact, so recall is 100%.',
+    api: [['Index', 'vector_index()'], ['Score', 'fn.vector_distance()'], ['Types', 'f32_sparse_vector · u8_sparse_vector']],
+    links: [['Sparse vector guide', `${DOCS}/guides/sparse-vector-search`]],
   },
   {
-    eyebrow: 'STEP 2', title: 'Multi-vector search keeps one vector per word.',
-    body: '<p class="lede">The model keeps a vector for every token instead. Each query word finds its best match in the document, and the scores are added up. This is called MaxSim.</p><p class="lede">It is more accurate: “landing” finds “touched” even in a document about many things. But each document now has <b>hundreds of vectors</b> to store and compare.</p>',
-    extra: () => matchCard(),
-    globe: { anchors: 0, query: true, doc: true, matches: true, pop: true, focus: CENTER, zoom: 1.2 },
+    id: 'multi', name: 'Multi-vector', short: 'One vector per token',
+    index: ['multi_vector_index()', 'on matrix() fields'],
+    query: ['fn.multi_vector_distance()', 'MaxSim, late interaction'],
+    body: 'Keeps one vector per token instead of one per document, and matches each query token to its best document token (MaxSim). TopK turns those many vectors into one sparse vector (SMVE), which the changelog puts at about 5.5× faster than PLAID and 7.5× faster than MUVERA.',
+    api: [['Index', 'multi_vector_index()'], ['Score', 'fn.multi_vector_distance()'], ['Field', 'matrix()']],
+    links: [['Interactive tour', '/multi-vector/'], ['SMVE blog post', 'https://www.topk.io/blog/20260311-smve-multi-vector-retrieval'], ['Multi-vector guide', `${DOCS}/guides/multi-vector-search`]],
   },
   {
-    eyebrow: 'STEP 3', title: 'TopK turns those many vectors back into one.',
-    body: '<p class="lede">The trick starts with fixed landmarks: random directions, chosen once and shared by every query and every document. This example uses 2,048.</p><p class="lede">Hover any landmark to inspect it.</p>',
-    globe: { anchors: 1, query: true, focus: CENTER, zoom: 1, scatter: true },
+    id: 'semantic', name: 'Semantic search', short: 'Embeddings built in',
+    index: ['semantic_index()', 'TopK embeds the text for you'],
+    query: ['fn.semantic_similarity()', 'query with plain text'],
+    body: 'Add one annotation to a text field and TopK embeds it on the server with its own model, topk-embed-v1. There is no embedding pipeline to run. Today this works on text fields only.',
+    api: [['Index', 'semantic_index()'], ['Score', 'fn.semantic_similarity()'], ['Model', 'topk-embed-v1']],
+    links: [['Semantic search guide', `${DOCS}/guides/semantic-search`], ['topk-embed-v1', 'https://www.topk.io/blog/topk-embed-v1']],
   },
   {
-    eyebrow: 'STEP 4', title: 'Each word is scored against every landmark.',
-    body: '<p class="lede">It is the same dot product you already use. For the word “apollo”, it gives one number per landmark: <b>2,048 numbers</b>.</p>',
-    extra: () => closenessCard(false),
-    globe: { anchors: 1, query: true, focus: WORDS[0].v, zoom: 1.7, rays: 'measure', word: 0 },
+    id: 'keyword', name: 'Keyword search', short: 'BM25',
+    index: ['keyword_index()', 'BM25, tunable b and k1'],
+    query: ['fn.bm25_score()', 'match(), match_all, match_any'],
+    body: 'Classic text search with BM25 relevance. Match terms, weight some terms more than others, or boost results with optional terms. No embeddings involved.',
+    api: [['Index', 'keyword_index()'], ['Score', 'fn.bm25_score()'], ['Filter', 'match() · match_all · match_any']],
+    links: [['Keyword search guide', `${DOCS}/guides/keyword-search`]],
   },
   {
-    eyebrow: 'STEP 5', title: 'Only the 8 strongest are kept.',
-    body: '<p class="lede">In 128 dimensions, a word lines up weakly with almost every random direction, so nearly all of those numbers sit close to zero. Keeping the top 8 loses little.</p><p class="lede">Similar words tend to keep the <b>same landmarks</b>.</p>',
-    extra: () => closenessCard(true) + sameCard(),
-    globe: { anchors: 1, query: true, focus: WORDS[0].v, zoom: 1.7, rays: 'keep', word: 0, kept: true },
+    id: 'regex', name: 'Regex & substring', short: 'Patterns in text',
+    index: ['ngram_index()', 'sparse n-grams'],
+    query: ['regexp_match()', 'and contains()'],
+    body: 'Filters text by regular expression or substring. An n-gram index rules out documents that cannot match, so the exact regex only runs on the few that might.',
+    api: [['Index', 'ngram_index()'], ['Filter', 'regexp_match() · contains()'], ['Engine', 'Rust regex crate']],
+    links: [['Interactive tour', '/regex/'], ['Sparse n-gram blog post', 'https://www.topk.io/blog/20260814-fast-regex-search-sparse-grams'], ['regexp_match reference', `${DOCS}/collections/query#regexp_match`]],
   },
   {
-    eyebrow: 'STEP 6', title: 'All the words fold into one sparse vector.',
-    body: '<p class="lede">Every word adds its 8 values to one shared list. A query adds them up, and a document averages the values in each slot.</p><p class="lede">Hundreds of vectors become <b>one sparse vector</b>. Each word adds at most 8 values, however long the list is.</p>',
-    extra: () => stripCard('q6', 'QUERY') + stripCard('d6', 'DOCUMENT'),
-    globe: { anchors: 1, query: true, focus: CENTER, zoom: 1, rays: 'all', kept: true },
-    after: () => { drawStrip('q6', encode(WORDS, K_DEFAULT)); drawStrip('d6', encode(DOC, K_DEFAULT, 'avg'), { color: INK }); },
-  },
-  {
-    eyebrow: 'STEP 7', title: 'Search is a sparse dot product.',
-    body: '<p class="lede">Multiply the two lists slot by slot and add up the results. Only slots filled in both lists count, and those mostly come from matching words.</p><p class="lede">Sparse vectors are cheap to store and fast to compare, and TopK runs them on <b>optimized sparse kernels</b>.</p>',
-    extra: () => stripCard('q7', 'QUERY') + stripCard('d7', 'DOCUMENT') + sharedCard(),
-    globe: { anchors: 1, query: true, doc: true, focus: CENTER, zoom: 1.05, rays: 'all', shared: true, kept: true },
-    after: () => {
-      const q = encode(WORDS, K_DEFAULT), d = encode(DOC, K_DEFAULT, 'avg');
-      const shared = new Set([...q.keys()].filter(j => d.has(j)));
-      drawStrip('q7', q, { shared, color: INK });
-      drawStrip('d7', d, { shared, color: INK, label: `${shared.size} SHARED` });
-    },
-  },
-  {
-    eyebrow: 'WHY IT MATTERS', title: '5–8× faster multi-vector search.',
-    body: '<p class="lede">Multi-vector search used to need slow, multi-stage pipelines. With one sparse vector per document, it becomes a first-stage search you can run over millions of documents, and documents can still be added, updated, and deleted.</p>',
-    extra: () => compareCard(),
-    globe: { anchors: 1, query: true, focus: CENTER, zoom: 1, rays: 'all', kept: true, spin: true },
-  },
-  {
-    eyebrow: 'TRY IT', title: 'Now explore it yourself.',
-    body: '<p class="lede">Drag to turn the globe, scroll or pinch to zoom, and hover any landmark. Pick a word and change how many landmarks it keeps.</p>',
-    extra: () => `
-      <div class="chips" id="pick">${WORDS.map((w, i) => `<button data-i="${i}">${w.w}</button>`).join('')}<button data-i="-1">all words</button></div>
-      <label class="k">LANDMARKS PER WORD <input id="kin" type="range" min="1" max="32" value="${state.K}" /> <output id="kout">${state.K}</output></label>
-      <div class="strip-wrap" style="margin-top:16px">${stripHead('qx', 'QUERY')}<canvas class="strip" id="qx" width="512" height="64"></canvas></div>
-      <div class="links"><a href="/multi-vector-demo/">Watch the animated version →</a></div>`,
-    globe: { anchors: 1, query: true, explore: true, zoom: 1.05, kept: true },
-    after: () => wireExplore(),
+    id: 'meta', name: 'Metadata filters', short: 'Structured fields',
+    index: ['Schema fields', 'structs, timestamps, lists'],
+    query: ['.filter()', 'eq, gt, in, starts_with…'],
+    body: 'Narrows results by any structured field: comparisons, ranges, lists, prefixes and nulls, joined with AND, OR and NOT. Filters always run before top-k, so a match is never lost, even if it is the only one.',
+    api: [['Filter', 'eq · gt · lt · in · starts_with'], ['Logic', 'and · or · not · any · all'], ['Types', 'struct · timestamp · list']],
+    links: [['Filtering reference', `${DOCS}/collections/query#filtering`], ['Field types', `${DOCS}/collections/manage#field-types`]],
   },
 ];
 
-const fmt = x => (x < 0 ? '−' : '') + Math.abs(x).toFixed(2);
-function closenessCard(keep) {
-  const rows = SIM.top.map(([s, j], n) =>
-    `<div style="animation-delay:${keep ? 0 : 0.4 + n * 0.12}s"><span>landmark ${String(j).padStart(4, '0')}</span><b>${fmt(s)}</b></div>`).join('');
-  const rest = keep
-    ? '<div class="muted"><span>2,040 others</span><b>→ 0</b></div>'
-    : `<div class="muted" style="animation-delay:1.5s"><span>2,040 others, 95% between</span><b>${fmt(SIM.lo)} and ${fmt(SIM.hi)}</b></div>`;
-  return `<div class="card"><h3>“APOLLO” VS 2,048 LANDMARKS · 128 DIMENSIONS</h3><div class="rows">${rows}${rest}</div></div>`;
-}
-const stripHead = (id, label) => `<div class="strip-head"><span>${label} · 2,048 SLOTS</span><b id="${id}-n"></b></div>`;
-function stripCard(id, label = 'QUERY') {
-  return `<div class="strip-wrap" style="margin-top:14px">${stripHead(id, label)}<canvas class="strip" id="${id}" width="512" height="64"></canvas></div>`;
-}
-// word examples, all computed from the globe's data
-const topSet = w => new Set(w.ranked.slice(0, K_DEFAULT).map(([, j]) => j));
-const shareCount = (a, b) => { const B = topSet(b); return [...topSet(a)].filter(j => B.has(j)).length; };
-const docWord = w => DOC.find(d => d.w === w);
-const QUERY_TEXT = 'apollo 11 landing moon date';
-const DOC_TEXT = 'Apollo 11 touched down on the Moon on July 20, 1969. Armstrong and Aldrin spent 21 hours on the surface.';
-function textCard() {
-  return `<div class="card"><h3>QUERY</h3><p class="txt">${QUERY_TEXT}</p><h3>DOCUMENT</h3><p class="txt">${DOC_TEXT}</p>
-    <p class="foot">Dense search turns each of these into a single vector.</p></div>`;
-}
-function matchCard() {
-  const rows = WORDS.map(q => `<div><span>${q.w}</span><b>→ ${bestMatch(q).w}</b></div>`).join('');
-  return `<div class="card"><h3>BEST MATCH FOR EACH QUERY WORD</h3><div class="rows">${rows}</div>
-    <p class="foot">The five match scores are added up. “landing” never appears in the document, but “touched” is close in meaning.</p></div>`;
-}
-function sameCard() {
-  const pairs = [[WORDS[2], docWord('touched')], [WORDS[3], docWord('Moon')], [WORDS[2], docWord('Armstrong')]];
-  const rows = pairs.map(([a, b], i) => `<div class="${i === 2 ? 'muted' : ''}"><span>${a.w} ↔ ${b.w}</span><b>${shareCount(a, b)} of 8 shared</b></div>`).join('');
-  return `<div class="card"><h3>SIMILAR WORDS KEEP THE SAME LANDMARKS</h3><div class="rows">${rows}</div></div>`;
-}
-function sharedCard() {
-  const rows = [];
-  let total = 0;
-  WORDS.forEach(q => DOC.forEach(d => {
-    const n = shareCount(q, d);
-    if (!n) return;
-    total += n;
-    rows.push([q.w, d.w, n, bestMatch(q) === d]);
-  }));
-  const quiet = DOC.filter(d => WORDS.every(q => !shareCount(q, d))).map(d => d.w);
-  return `<div class="card" style="margin-top:16px"><h3>WHERE THE ${total} SHARED SLOTS COME FROM</h3><div class="rows">
-    ${rows.map(([q, d, n, match]) => `<div class="${match ? '' : 'muted'}"><span>${q} ↔ ${d}${match ? '' : ' (near miss)'}</span><b>${n}</b></div>`).join('')}
-    <div class="muted"><span>${quiet.join(', ')}</span><b>0</b></div>
-  </div></div>`;
-}
-function compareCard() {
-  const rows = [
-    ['Dense vectors', 'One vector per document', 'Fast, but details blur', ''],
-    ['PLAID', 'Multi-vector, multi-stage', 'Accurate', '221 ms'],
-    ['MUVERA', 'Multi-vector, large dense vectors', 'Accurate', '310 ms'],
-    ['TopK', 'Multi-vector as one sparse vector', 'Recall close to both', '39.9 ms'],
-  ];
-  return `<div class="card"><div class="compare">${rows.map(([n, how, acc, ms], i) =>
-    `<div class="${i === 3 ? 'us' : ''}"><span class="n">${n}</span><span class="how">${how}<br><em>${acc}</em></span><span class="ms">${ms}</span></div>`).join('')}</div>
-    <p class="foot">Average query time for the top 100 results on MS MARCO, 8.8M documents.</p></div>`;
-}
-function drawStrip(id, slots, { shared = null, color = ORANGE, label = null } = {}) {
-  const c = document.getElementById(id);
-  if (!c) return;
-  const g = c.getContext('2d');
-  g.fillStyle = BG; g.fillRect(0, 0, c.width, c.height);
-  for (let j = 0; j < N; j++) {
-    const x = (j % 128) * 4, y = Math.floor(j / 128) * 4;
-    g.fillStyle = slots.has(j) ? (shared ? (shared.has(j) ? ORANGE : color) : color) : 'rgba(255,255,255,0.09)';
-    if (shared && slots.has(j) && !shared.has(j)) g.fillStyle = 'rgba(244,239,233,0.55)';
-    g.fillRect(x, y, 3, 3);
-  }
-  document.getElementById(id + '-n').textContent = label || `${slots.size} FILLED`;
-}
+// ---------- everything shared by all seven ----------
+const SHARED = {
+  interfaces: [
+    { id: 'py', k: 'Python SDK', d: 'topk-sdk', body: 'The full query language from Python: schemas, writes, queries and aggregations.', links: [['Python SDK', `${DOCS}/sdk/topk-py/overview`]] },
+    { id: 'js', k: 'TypeScript SDK', d: 'topk-js', body: 'The same query language from JavaScript and TypeScript.', links: [['TypeScript SDK', `${DOCS}/sdk/topk-js/overview`]] },
+    { id: 'rs', k: 'Rust SDK', d: 'topk-rs', body: 'An async Rust client for the TopK API.', links: [['Rust SDK', `${DOCS}/sdk/topk-rs/overview`]] },
+    { id: 'sql', k: 'SQL', d: 'Postgres wire protocol', body: 'Connect with psql or any Postgres client. Create tables with indexes and run hybrid and multi-vector search in SQL.', links: [['SQL overview', `${DOCS}/sdk/topk-sql/overview`]] },
+    { id: 'es', k: 'Elasticsearch API', d: 'compatible endpoint', body: 'An Elasticsearch-compatible API, alongside the SDKs and SQL.', links: [['TopK vs Elasticsearch', 'https://www.topk.io/topk-vs-elasticsearch']] },
+    { id: 'cli', k: 'CLI', d: 'brew install topk', body: 'Log in, manage projects and regions, and import data from files, Postgres, MySQL, SQLite, MongoDB or Elasticsearch.', links: [['CLI docs', `${DOCS}/cli`]] },
+  ],
+  engine: [
+    { id: 'scoring', k: 'Custom scoring', d: 'boost, math, coalesce', body: 'Blend similarity scores with any field, for example recency or source quality, inside the query. Scores are computed before sorting, so nothing needs re-ranking in your app.', links: [['Custom scoring', `${DOCS}/concepts#custom-scoring`]] },
+    { id: 'rank', k: 'Top-k & sort', d: 'topk, sort, limit, offset', body: 'Rank by any score or blend of scores and return the top results. Every kind of search competes in one ranking, with no per-index cut-off.', links: [['True hybrid search', `${DOCS}/guides/true-hybrid-search`]] },
+    { id: 'agg', k: 'Aggregations', d: 'group by, count, avg, quantile', body: 'Group and summarize matching documents: count, count distinct, sum, average, min, max and approximate quantiles.', links: [['Query reference', `${DOCS}/collections/query#group_by`]] },
+    { id: 'consistency', k: 'Consistency', d: 'balanced, indexed, strong, LSN', body: 'Choose per query: balanced (the default, under a second behind writes), indexed (fastest, compacted data only), strong (every write visible), or LSN-based read-your-writes.', links: [['Read consistency', `${DOCS}/concepts#read-consistency`]] },
+  ],
+  storage: [
+    { id: 'wal', k: 'Write-ahead log', d: 'on object storage', body: 'Every write lands in a write-ahead log backed by object storage, ordered by log sequence numbers. Writes are batched for throughput, at about 300 ms p99 for requests under 1 MB.', links: [['Write path', `${DOCS}/architecture#write-path`]] },
+    { id: 'lsm', k: 'Compactor', d: 'LSM-tree, in parallel', body: 'New writes are flushed into read-optimized sorted runs and merged in the background on separate nodes, so heavy indexing does not cause query latency spikes.', links: [['Compactor', `${DOCS}/architecture#compactor-lsm-tree`]] },
+    { id: 'bob', k: '.bob files', d: 'columnar, on object storage', body: 'A columnar file format built for search on object storage, with zero-copy reads and containers for dense and sparse vectors, tensors and inverted indexes. Object storage is the only durable storage.', links: [['File format', `${DOCS}/architecture#file-format-bob`]] },
+    { id: 'cache', k: 'Cache', d: 'memory + NVMe', body: 'Executor nodes cache the data each query needs in memory and on local NVMe drives, so hot data is served locally while object storage holds everything.', links: [['Cache hierarchy', `${DOCS}/architecture#cache-hierarchy`]] },
+  ],
+  platform: [
+    { id: 'tenancy', k: 'Multi-tenancy', d: 'isolated partitions', body: 'Each tenant gets a fully isolated partition of a collection, created on first write. Partitions support every index type and scale independently.', links: [['Multi-tenancy', `${DOCS}/concepts#multi-tenancy`]] },
+    { id: 'rw', k: 'Read/write separation', d: 'separate node pools', body: 'Queries and writes run on separate node pools, so heavy ingestion and compaction do not cause query latency spikes.', links: [['Read-write separation', `${DOCS}/concepts#read-write-separation`]] },
+    { id: 'inference', k: 'Inference', d: 'topk-embed-v1', body: 'An inference layer generates embeddings for semantic_index(). TopK has open-sourced two topk-embed-v1 models (0.8B and 2B parameters).', links: [['topk-embed-v1', 'https://www.topk.io/blog/topk-embed-v1']] },
+    { id: 'regions', k: 'Regions', d: 'AWS, GCP, cloud-prem', body: 'Multi-tenant regions on several cloud providers, plus dedicated single-tenant regions or cloud-prem deployments for full isolation and data residency.', links: [['Regions', `${DOCS}/regions`], ['Architecture', `${DOCS}/architecture`]] },
+  ],
+};
+const STATS = [['1B+', 'documents per partition'], ['<100 ms', 'p99 query latency at 1B documents'], ['~70 MB/s', 'writes per partition'], ['<1 s', 'from write to searchable']];
 
-// ================= step machine =================
-const state = { step: 0, t0: performance.now(), K: K_DEFAULT, selected: 0, anchorShown: 1 };
-const panel = document.getElementById('panel');
-const content = document.getElementById('content');
-const pips = document.getElementById('pips');
-const back = document.getElementById('back'), next = document.getElementById('next');
-STEPS.forEach((_, i) => {
-  const b = document.createElement('button');
-  b.setAttribute('aria-label', i === 0 ? 'Start' : i === STEPS.length - 1 ? 'Try it' : `Step ${i}`);
-  b.onclick = () => go(i);
-  pips.appendChild(b);
-});
-function go(i) {
-  i = clamp(i, 0, STEPS.length - 1);
-  const s = STEPS[i];
-  if (s.globe.scatter && state.step < i) state.anchorShown = 0; // landmarks scatter in when first introduced
-  state.step = i;
-  state.t0 = performance.now();
-  document.getElementById('eyebrow').textContent = s.eyebrow;
-  document.getElementById('title').textContent = s.title;
-  document.getElementById('body').innerHTML = s.body;
-  document.getElementById('extra').innerHTML = s.extra ? s.extra() : '';
-  panel.classList.toggle('intro', !!s.intro);
-  content.classList.remove('step-in'); void content.offsetWidth; content.classList.add('step-in');
-  [...pips.children].forEach((b, k) => { b.classList.toggle('on', k === i); b.classList.toggle('done', k < i); });
-  back.disabled = i === 0;
-  next.textContent = i === 0 ? 'Start →' : i === STEPS.length - 2 ? 'Try it →' : i === STEPS.length - 1 ? 'Start over' : 'Next →';
-  focus = s.globe.explore ? (state.selected >= 0 ? WORDS[state.selected].v : CENTER) : (s.globe.focus || null);
-  targetZoom = fitZoom(s.globe.zoom);
-  spin = null;
-  document.getElementById('note').classList.toggle('on', i > 0);
-  if (s.after) s.after();
-  history.replaceState(null, '', i ? `#${i}` : location.pathname);
+// ---------- render ----------
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const brk = s => esc(s).replace(/([_.])/g, '$1<wbr>');
+const node = (id, k, d, cls = '') => `<button class="node ${cls}" data-id="${id}"><i class="c2"></i><span class="k">${brk(k)}</span>${d ? `<span class="d">${esc(d)}</span>` : ''}</button>`;
+const ALL = {};
+CAPS.forEach(c => { ALL[c.id] = { eyebrow: 'SEARCH TYPE', title: c.name, ...c }; ALL[c.id + ':i'] = ALL[c.id]; ALL[c.id + ':q'] = ALL[c.id]; });
+const groups = { interfaces: 'INTERFACE', engine: 'QUERY ENGINE', storage: 'STORAGE', platform: 'PLATFORM' };
+Object.entries(SHARED).forEach(([g, items]) => items.forEach(it => ALL[it.id] = { eyebrow: groups[g], title: it.k, ...it }));
+ALL.engine = {
+  eyebrow: 'QUERY ENGINE', title: 'One query engine: reactor',
+  body: 'reactor combines different kinds of search, filters and scoring expressions in a single query plan. Pick several search types on the map to see them share one query.',
+  api: [['Engine', 'reactor'], ['Kernels', 'SIMD, quantization, vectorized filters']],
+  links: [['Query engine', `${DOCS}/architecture#query-engine-reactor`], ['True hybrid search', `${DOCS}/guides/true-hybrid-search`]],
+};
+
+const map = document.getElementById('map');
+map.innerHTML = `
+  <div class="rowlabel">INTERFACES</div>
+  <div class="span bar">${SHARED.interfaces.map(i => node(i.id, i.k, i.d)).join('')}</div>
+
+  <div class="rowlabel caps-row">SEARCH TYPES</div>
+  ${CAPS.map(c => `<button class="node cap caps-row" data-id="${c.id}" data-cap="${c.id}"><i></i><i class="c2"></i><span class="k">${esc(c.name)}</span><span class="d">${esc(c.short)}</span></button>`).join('')}
+
+  <div class="rowlabel idx-row">INDEX<br>ON WRITE</div>
+  ${CAPS.map(c => `<button class="node col-link idx-row" data-id="${c.id}:i" data-cap="${c.id}"><i class="c2"></i><span class="k">${brk(c.index[0])}</span><span class="d">${esc(c.index[1])}</span></button>`).join('')}
+
+  <div class="rowlabel fn-row">SCORE OR<br>FILTER</div>
+  ${CAPS.map(c => `<button class="node fn-row" data-id="${c.id}:q" data-cap="${c.id}"><i class="c2"></i><span class="k">${brk(c.query[0])}</span><span class="d">${esc(c.query[1])}</span></button>`).join('')}
+
+  <div class="rowlabel" style="display:none" id="phone-label">SEARCH TYPES</div>
+  <div class="span phone-caps">${CAPS.map(c => `<div class="card">${node(c.id, c.name, c.short, 'cap')}${node(c.id + ':i', c.index[0], c.index[1])}${node(c.id + ':q', c.query[0], c.query[1])}</div>`).join('')}</div>
+
+  <div class="rowlabel" style="padding-top:58px">ONE QUERY</div>
+  <div class="span engine">
+    <div class="engine-head"><b>reactor query engine</b><span id="combo">Pick search types above to combine them.</span></div>
+    <div class="bar">${node('engine', 'One query plan', 'retrieval, filters and scoring together')}${SHARED.engine.map(i => node(i.id, i.k, i.d)).join('')}</div>
+  </div>
+
+  <div class="rowlabel">STORAGE</div>
+  <div class="span flow">${SHARED.storage.map((i, k) => (k ? '<span class="arrow">→</span>' : '') + node(i.id, i.k, i.d)).join('')}</div>
+
+  <div class="rowlabel">PLATFORM</div>
+  <div class="span bar">${SHARED.platform.map(i => node(i.id, i.k, i.d)).join('')}</div>
+
+  <div class="rowlabel">PUBLISHED</div>
+  <div class="span stats">${STATS.map(([v, l]) => `<div class="stat"><b data-v="${esc(v)}">${esc(v)}</b><span>${l}</span></div>`).join('')}</div>`;
+// stagger the entrance by row and column
+[...map.children].forEach((el, k) => { el.style.setProperty('--row', Math.floor(k / 8)); });
+map.querySelectorAll('.bar, .flow, .stats, .engine .bar').forEach(group => [...group.children].forEach((el, k) => el.style.setProperty('--col', k)));
+if (matchMedia('(max-width: 860px)').matches) document.getElementById('phone-label').style.display = '';
+
+// ---------- interaction ----------
+const picked = new Set();
+let current = null;
+const detail = document.getElementById('detail');
+function showDetail(id) {
+  const it = ALL[id];
+  if (!it) return;
+  current = id;
+  detail.innerHTML = `
+    <p class="eyebrow">${it.eyebrow}</p>
+    <h2>${esc(it.title)}</h2>
+    <p>${esc(it.body)}</p>
+    ${it.api ? `<div class="api">${it.api.map(([a, b]) => `<div><span>${a.toUpperCase()}</span><code>${esc(b)}</code></div>`).join('')}</div>` : ''}
+    <div class="links">${(it.links || []).map(([t, u]) => `<a href="${u}"${u.startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>${esc(t)} →</a>`).join('')}</div>`;
 }
-back.onclick = () => go(state.step - 1);
-next.onclick = () => go(state.step === STEPS.length - 1 ? 0 : state.step + 1);
-addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT') return;
-  if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); next.click(); }
-  if (e.key === 'ArrowLeft') { e.preventDefault(); go(state.step - 1); }
-});
-
-const fitZoom = z => W < 760 ? Math.min(z, 1.2) : z;
-function wireExplore() {
-  const pick = document.getElementById('pick');
-  const sync = () => {
-    [...pick.children].forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.i === state.selected)));
-    const words = state.selected >= 0 ? [WORDS[state.selected]] : WORDS;
-    drawStrip('qx', encode(words, state.K));
-  };
-  pick.onclick = e => {
-    const b = e.target.closest('button');
-    if (!b) return;
-    state.selected = +b.dataset.i;
-    focus = state.selected >= 0 ? WORDS[state.selected].v : CENTER;
-    targetZoom = fitZoom(state.selected >= 0 ? 1.2 : 1);
-    sync();
-  };
-  const kin = document.getElementById('kin'), kout = document.getElementById('kout');
-  kin.oninput = () => { state.K = +kin.value; kout.textContent = state.K; sync(); };
-  sync();
+function defaultDetail() {
+  detail.innerHTML = `
+    <p class="eyebrow">HOW TO READ THIS MAP</p>
+    <h2>Seven kinds of search, one engine.</h2>
+    <p>Each column is one kind of search. Its index is built when you write data, and its function is called when you query.</p>
+    <p>Everything below the columns is shared: <b>one query engine</b>, one storage layer and one platform. That is why the seven can be mixed in a single query.</p>
+    <p class="hint">CLICK ANY PIECE · PICK SEVERAL SEARCH TYPES TO COMBINE THEM</p>`;
 }
-
-// ================= globe: trackball rotation =================
-const cv = document.getElementById('globe');
-const ctx = cv.getContext('2d');
-let W = 0, H = 0, DPR = 1, CX = 0, CY = 0, R = 0;
-function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = innerWidth; H = innerHeight;
-  cv.width = W * DPR; cv.height = H * DPR;
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  const narrow = W < 760;
-  CX = narrow ? W / 2 : 540 + (W - 540) / 2;
-  CY = narrow ? H * 0.25 : H * 0.5;
-  R = narrow ? Math.min(W * 0.36, H * 0.17) : Math.min((W - 600) * 0.36, H * 0.34);
-}
-addEventListener('resize', resize);
-resize();
-
-let M = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-let zoom = 1, targetZoom = 1, focus = null, spin = null;
-const rot = v => [dot(M[0], v), dot(M[1], v), dot(M[2], v)];
-function project(v) { const p = rot(v); return [CX + p[0] * R * zoom, CY - p[1] * R * zoom, p[2]]; }
-function axisAngle(u, a) {
-  const [x, y, z] = u, c = Math.cos(a), s = Math.sin(a), t = 1 - c;
-  return [
-    [t * x * x + c, t * x * y - s * z, t * x * z + s * y],
-    [t * x * y + s * z, t * y * y + c, t * y * z - s * x],
-    [t * x * z - s * y, t * y * z + s * x, t * z * z + c],
-  ];
-}
-const mul = (A, B) => A.map(row => [0, 1, 2].map(j => row[0] * B[0][j] + row[1] * B[1][j] + row[2] * B[2][j]));
-function turn(axis, angle) {
-  const l = Math.hypot(...axis);
-  if (l < 1e-9 || Math.abs(angle) < 1e-9) return;
-  M = mul(axisAngle(axis.map(x => x / l), angle), M);
-}
-function tidy() {
-  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-  const r0 = norm(M[0]), r2 = norm(cross(r0, M[1])), r1 = cross(r2, r0);
-  M = [r0, r1, r2];
-}
-turn([1, 0, 0], 0.3); turn([0, 1, 0], -0.5);
-
-// ================= input =================
-let dragging = false, moved = 0, last = null, lastT = 0, idle = 0, pointer = null, hover = null, pinned = false;
-const pointers = new Map();
-let pinchStart = null;
-const clampZoom = z => Math.min(5, Math.max(0.6, z));
-cv.addEventListener('pointerdown', e => {
-  cv.setPointerCapture(e.pointerId);
-  pointers.set(e.pointerId, [e.clientX, e.clientY]);
-  if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinchStart = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), zoom }; }
-  dragging = true; moved = 0; last = [e.clientX, e.clientY]; lastT = e.timeStamp; spin = null; focus = null; idle = 0;
-  cv.classList.add('dragging');
-});
-cv.addEventListener('pointermove', e => {
-  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, [e.clientX, e.clientY]);
-  if (e.pointerType === 'mouse') pointer = [e.clientX, e.clientY];
-  if (pinchStart && pointers.size === 2) {
-    const [a, b] = [...pointers.values()];
-    zoom = clampZoom(pinchStart.zoom * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinchStart.d);
-    targetZoom = null;
-    return;
-  }
-  if (dragging && last) {
-    const dx = e.clientX - last[0], dy = e.clientY - last[1];
-    const dt = Math.max(1, e.timeStamp - lastT);
-    moved += Math.abs(dx) + Math.abs(dy);
-    turn([dy, dx, 0], Math.hypot(dx, dy) / (R * zoom)); // the surface under the cursor follows it
-    const rate = Math.hypot(dx, dy) / (R * zoom) / dt;
-    spin = { axis: [dy, dx, 0], rate: Math.min(0.006, (spin ? spin.rate : 0) * 0.5 + rate * 0.5), t: e.timeStamp };
-    last = [e.clientX, e.clientY]; lastT = e.timeStamp;
-    if (moved > 6) pinned = false;
-  }
-});
-function endPointer(e) {
-  pointers.delete(e.pointerId);
-  if (pointers.size < 2) pinchStart = null;
-  if (pointers.size) return;
-  if (dragging && moved < 6) {
-    spin = null;
-    const h = hitTest(e.clientX, e.clientY);
-    if (h && h.kind === 'word' && STEPS[state.step].globe.explore) {
-      state.selected = h.i; focus = WORDS[h.i].v; wireExplore();
-    }
-    if (e.pointerType !== 'mouse') { hover = h; pinned = !!h; } // tap to inspect on touch screens
-  }
-  if (spin && e.timeStamp - spin.t > 60) spin = null; // a pause before release means no fling
-  dragging = false; last = null;
-  cv.classList.remove('dragging');
-}
-cv.addEventListener('pointerup', endPointer);
-cv.addEventListener('pointercancel', endPointer);
-cv.addEventListener('pointerleave', () => { if (!dragging) { pointer = null; if (!pinned) hover = null; } });
-cv.addEventListener('wheel', e => { e.preventDefault(); zoom = clampZoom(zoom * Math.exp(-e.deltaY * 0.0015)); targetZoom = null; }, { passive: false });
-
-function hitTest(x, y) {
-  const g = STEPS[state.step].globe;
-  const words = g.query ? WORDS : [];
-  for (let i = 0; i < words.length; i++) {
-    const [px, py, z] = project(words[i].v);
-    if (z > 0 && Math.abs(x - px) < 18 && Math.abs(y - py) < 18) return { kind: 'word', i };
-  }
-  if (state.anchorShown < 0.9) return null;
-  let best = null, bd = 18 * 18;
-  for (let j = 0; j < N; j++) {
-    const [px, py, z] = project(ANCHORS[j]);
-    if (z < 0) continue;
-    const d = (px - x) ** 2 + (py - y) ** 2;
-    if (d < bd) { bd = d; best = { kind: 'point', i: j }; }
-  }
-  return best;
-}
-
-const tip = document.getElementById('tip');
-function updateTip() {
-  if (!hover || dragging) { tip.style.opacity = 0; cv.classList.remove('pointing'); return; }
-  const v = hover.kind === 'word' ? WORDS[hover.i].v : ANCHORS[hover.i];
-  const [x, y, z] = project(v);
-  if (z < 0) { tip.style.opacity = 0; return; }
-  const g = STEPS[state.step].globe;
-  if (hover.kind === 'word') {
-    tip.innerHTML = g.explore ? `“${WORDS[hover.i].w}” · click to select` : `“${WORDS[hover.i].w}”`;
-    cv.classList.toggle('pointing', !!g.explore);
-  } else {
-    // closeness to the word in focus, or to the nearest query word
-    const ws = g.word !== undefined ? [WORDS[g.word]] : g.explore && state.selected >= 0 ? [WORDS[state.selected]] : WORDS;
-    let bw = ws[0], bs = -2;
-    ws.forEach(wd => { const s = dot(wd.v, ANCHORS[hover.i]); if (s > bs) { bs = s; bw = wd; } });
-    const K = g.explore ? state.K : K_DEFAULT;
-    const rank = bw.ranked.findIndex(([, j]) => j === hover.i);
-    const kept = rank > -1 && rank < K;
-    const order = rank > -1 ? `<b>#${rank + 1}</b> closest to “${bw.w}”` : `far from “${bw.w}”`;
-    const fate = g.kept ? (kept ? ' · kept' : ' · dropped') : '';
-    tip.innerHTML = `landmark ${String(hover.i).padStart(4, '0')} · ${order}${fate}`;
-    cv.classList.remove('pointing');
-  }
-  const left = x > W - 460;
-  tip.style.transform = left ? 'translate(calc(-100% - 14px), -50%)' : 'translate(14px, -50%)';
-  tip.style.left = x + 'px';
-  tip.style.top = y + 'px';
-  tip.style.opacity = 1;
-}
-
-// ================= render =================
-function label(x, y, text, { below = false, active = false, muted = false, alpha = 1 } = {}) {
-  ctx.save();
-  ctx.globalAlpha *= alpha;
-  ctx.font = "500 14px 'Geist Mono', monospace";
-  const lw = ctx.measureText(text).width + 20;
-  const ty = below ? y + 16 : y - 44;
-  ctx.fillStyle = 'rgba(20,17,15,0.92)';
-  ctx.fillRect(x - lw / 2, ty, lw, 28);
-  ctx.strokeStyle = active ? ORANGE : muted ? 'rgba(244,239,233,0.22)' : 'rgba(244,239,233,0.45)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(x - lw / 2 + 0.5, ty + 0.5, lw - 1, 27);
-  ctx.fillStyle = 'rgba(244,239,233,0.4)';
-  ctx.fillRect(x - 0.5, below ? y + 7 : y - 16, 1, 9);
-  ctx.fillStyle = muted ? MUTED : INK;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(text, x, ty + 14);
-  ctx.restore();
-}
-
-function frame(now) {
-  const g = STEPS[state.step].globe;
-  const st = (now - state.t0) / 1000; // seconds into this step
-  idle += 1 / 60;
-
-  if (targetZoom !== null) { zoom += (targetZoom - zoom) * 0.07; if (Math.abs(targetZoom - zoom) < 0.002) targetZoom = null; }
-  if (!dragging) {
-    if (focus) {
-      const p = rot(focus);
-      const angle = Math.acos(clamp(p[2], -1, 1));
-      turn([-p[1], p[0], 0], -angle * 0.08);
-      if (angle < 0.002) focus = null;
-    } else if (spin) {
-      turn(spin.axis, spin.rate * 16);
-      spin.rate *= 0.95;
-      if (spin.rate < 1e-5) spin = null;
-    } else if (g.spin && !pointer) {
-      turn([0, 1, 0], 0.0015);
-    }
-  }
-  tidy();
-  state.anchorShown += ((g.anchors || 0) - state.anchorShown) * (g.scatter ? 0.035 : 0.08);
-  if (pointer && !dragging) hover = hitTest(pointer[0], pointer[1]);
-
-  ctx.clearRect(0, 0, W, H);
-  const RZ = R * zoom, zs = Math.sqrt(zoom);
-  const glow = ctx.createRadialGradient(CX, CY, RZ * 0.2, CX, CY, RZ * 1.3);
-  glow.addColorStop(0, 'rgba(254,79,2,0.08)');
-  glow.addColorStop(1, 'rgba(254,79,2,0)');
-  ctx.fillStyle = glow;
-  ctx.beginPath(); ctx.arc(CX, CY, RZ * 1.3, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(CX, CY, RZ, 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-  const ring = f => {
-    ctx.beginPath();
-    let pen = false;
-    for (let s = 0; s <= 96; s++) {
-      const [x, y, z] = project(f(s / 96 * Math.PI * 2));
-      if (z < 0) { pen = false; continue; }
-      pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-      pen = true;
-    }
-    ctx.stroke();
-  };
-  for (let k = -2; k <= 2; k++) { const lat = k * 0.5; ring(ph => [Math.cos(lat) * Math.cos(ph), Math.sin(lat), Math.cos(lat) * Math.sin(ph)]); }
-  for (let k = 0; k < 6; k++) { const lon = k * Math.PI / 6; ring(th => [Math.cos(th) * Math.cos(lon), Math.sin(th), Math.cos(th) * Math.sin(lon)]); }
-
-  // which words show rays, and how many each keeps
-  const K = g.explore ? state.K : K_DEFAULT;
-  let rayWords = [];
-  if (g.rays === 'measure' || g.rays === 'keep') rayWords = [WORDS[g.word]];
-  else if (g.rays === 'all') rayWords = WORDS;
-  else if (g.explore) rayWords = state.selected >= 0 ? [WORDS[state.selected]] : WORDS;
-  const lit = new Map();
-  rayWords.forEach(wd => wd.ranked.slice(0, K).forEach(([, j], n) => {
-    const appear = g.rays === 'measure' ? clamp((st - 0.4 - n * 0.12) / 0.25) : 1;
-    if (appear > 0) lit.set(j, Math.max(lit.get(j) || 0, appear));
-  }));
-  const docLit = new Set();
-  if (g.shared) DOC.forEach(d => d.ranked.slice(0, K).forEach(([, j]) => docLit.add(j)));
-
-  // landmarks
-  const shown = Math.floor(N * clamp(state.anchorShown));
-  const alpha = g.anchorAlpha || 1;
-  for (let j = 0; j < shown; j++) {
-    if (lit.has(j) || docLit.has(j)) continue;
-    const [x, y, z] = project(ANCHORS[j]);
-    const depth = (z + 1) / 2;
-    ctx.fillStyle = `rgba(244,239,233,${(0.06 + 0.4 * depth) * alpha})`;
-    const s = (0.9 + 1.6 * depth) * zs;
-    ctx.fillRect(x - s / 2, y - s / 2, s, s);
-  }
-
-  // step 2: each query word's best match in the document
-  if (g.matches) {
-    WORDS.forEach((qw, i) => {
-      const p = clamp((st - 0.5 - i * 0.25) / 0.4);
-      if (p <= 0) return;
-      const [x1, y1] = project(qw.v), [x2, y2] = project(bestMatch(qw).v);
-      ctx.strokeStyle = ORANGE; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 + (x2 - x1) * p, y1 + (y2 - y1) * p); ctx.stroke();
-    });
-  }
-
-  // step 4: faint rays to many landmarks, so "every landmark" reads; brighter for the closest
-  if (g.rays === 'measure') {
-    const wd = WORDS[g.word];
-    const [tx, ty] = project(wd.v);
-    wd.ranked.slice(8, 64).forEach(([, j], n) => {
-      const p = clamp((st - 1.6 - n * 0.02) / 0.3);
-      if (p <= 0) return;
-      const [x, y, z] = project(ANCHORS[j]);
-      if (z < 0) return;
-      ctx.strokeStyle = `rgba(244,239,233,${0.18 * p * (1 - n / 64)})`;
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(x, y); ctx.stroke();
-    });
-  }
-  // step 5: those faint rays fade away as the rest drop to zero
-  if (g.rays === 'keep') {
-    const fade = 1 - clamp(st / 0.8);
-    if (fade > 0) {
-      const wd = WORDS[g.word];
-      const [tx, ty] = project(wd.v);
-      wd.ranked.slice(8, 64).forEach(([, j], n) => {
-        const [x, y, z] = project(ANCHORS[j]);
-        if (z < 0) return;
-        ctx.strokeStyle = `rgba(244,239,233,${0.18 * fade * (1 - n / 64)})`;
-        ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(x, y); ctx.stroke();
-      });
-    }
-  }
-
-  // kept rays
-  rayWords.forEach(wd => {
-    const [tx, ty, tz] = project(wd.v);
-    wd.ranked.slice(0, K).forEach(([, j]) => {
-      const a = lit.get(j) || 0;
-      if (a <= 0) return;
-      const [x, y, z] = project(ANCHORS[j]);
-      const front = Math.min(tz, z) > -0.05 ? 1 : 0.25;
-      ctx.strokeStyle = `rgba(254,79,2,${0.6 * front * a})`;
-      ctx.lineWidth = 1.2 + 0.3 * (zoom - 1);
-      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx + (x - tx) * a, ty + (y - ty) * a); ctx.stroke();
-    });
+let refresh = function () {
+  document.querySelectorAll('.node').forEach(n => {
+    const cap = n.dataset.cap || (CAPS.some(c => n.dataset.id && n.dataset.id.split(':')[0] === c.id) ? n.dataset.id.split(':')[0] : null);
+    const isCap = !!cap;
+    n.classList.toggle('on', (isCap && picked.has(cap)) || (!isCap && n.dataset.id === current));
+    n.classList.toggle('dim', isCap && picked.size > 0 && !picked.has(cap));
   });
-  // step 7: document landmarks as outlines; shared ones ringed
-  docLit.forEach(j => {
-    const [x, y, z] = project(ANCHORS[j]);
-    if (z < -0.05) return;
-    const s = 6 * zs;
-    ctx.strokeStyle = lit.has(j) ? INK : 'rgba(244,239,233,0.5)';
-    ctx.lineWidth = lit.has(j) ? 1.5 : 1;
-    ctx.strokeRect(x - s / 2 - (lit.has(j) ? 2 : 0), y - s / 2 - (lit.has(j) ? 2 : 0), s + (lit.has(j) ? 4 : 0), s + (lit.has(j) ? 4 : 0));
-  });
-  lit.forEach((a, j) => {
-    const [x, y, z] = project(ANCHORS[j]);
-    ctx.globalAlpha = (z > -0.05 ? 1 : 0.35) * a;
-    const s = 5 * zs;
-    ctx.fillStyle = ORANGE;
-    ctx.fillRect(x - s / 2, y - s / 2, s, s);
-  });
-  ctx.globalAlpha = 1;
-
-  if (hover && hover.kind === 'point' && !dragging) {
-    const [x, y, z] = project(ANCHORS[hover.i]);
-    if (z > 0) { ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.strokeRect(x - 7, y - 7, 14, 14); }
+  const combo = document.getElementById('combo');
+  if (!picked.size) combo.textContent = 'Pick search types above to combine them.';
+  else {
+    const names = CAPS.filter(c => picked.has(c.id)).map(c => c.name.toLowerCase());
+    combo.textContent = picked.size === 1
+      ? `${CAPS.find(c => picked.has(c.id)).name}: one query.`
+      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}: still one query, with no per-index cut-off.`;
   }
-
-  // step 1: each text's words collapse into a single point, joined by one dot product
-  if (g.dense) {
-    const p = (x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2)(clamp((st - 1.2) / 1.4));
-    const slerp = (v, c) => norm(v.map((x, i) => x + (c[i] - x) * p));
-    const sets = [[DOC, DC, true], [WORDS, QC, false]];
-    for (const [words, c, isDoc] of sets) {
-      words.forEach((w, i) => {
-        const [x, y, z] = project(slerp(w.v, c));
-        const a = clamp((st - 0.1 - i * 0.05) / 0.3) * (z > -0.05 ? 1 : 0.2);
-        if (a <= 0) return;
-        ctx.globalAlpha = a * (p > 0.98 ? 0 : 1);
-        ctx.fillStyle = isDoc ? MUTED : INK;
-        ctx.fillRect(x - 5, y - 5, 10, 10);
-        ctx.globalAlpha = 1;
-        if (p < 0.6) label(x, y, w.w, { below: isDoc, muted: isDoc, alpha: a * (1 - p / 0.6) });
-      });
-    }
-    if (p > 0.9) {
-      const a = clamp((p - 0.9) / 0.1);
-      const [qx, qy] = project(QC), [dx, dy] = project(DC);
-      const l = clamp((st - 2.8) / 0.5);
-      if (l > 0) {
-        ctx.strokeStyle = ORANGE; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(qx, qy); ctx.lineTo(qx + (dx - qx) * l, qy + (dy - qy) * l); ctx.stroke();
-      }
-      ctx.globalAlpha = a;
-      ctx.fillStyle = MUTED; ctx.fillRect(dx - 8, dy - 8, 16, 16);
-      ctx.fillStyle = INK; ctx.fillRect(qx - 8, qy - 8, 16, 16);
-      ctx.globalAlpha = 1;
-      label(dx, dy, 'whole document', { below: true, muted: true, alpha: a });
-      label(qx, qy, 'whole query', { alpha: a });
-    }
-  }
-
-  // document words (below their marker), then query words (above)
-  if (g.doc) {
-    DOC.forEach((d, i) => {
-      const [x, y, z] = project(d.v);
-      const a = clamp((st - i * 0.06) / 0.3) * (z > -0.05 ? 1 : 0.2);
-      if (a <= 0) return;
-      ctx.globalAlpha = a;
-      ctx.fillStyle = MUTED;
-      ctx.fillRect(x - 5, y - 5, 10, 10);
-      ctx.globalAlpha = 1;
-      label(x, y, d.w, { below: true, muted: true, alpha: a });
-    });
-  }
-  if (g.query) {
-    WORDS.forEach((wd, i) => {
-      const [x, y, z] = project(wd.v);
-      const pop = g.pop ? clamp((st - 0.2 - i * 0.18) / 0.3) : 1;
-      const focusWord = g.word !== undefined ? g.word : g.explore ? state.selected : -1;
-      const on = focusWord < 0 || focusWord === i;
-      const a = pop * (z > -0.05 ? 1 : 0.2) * (on ? 1 : 0.45);
-      if (a <= 0) return;
-      ctx.globalAlpha = a;
-      ctx.fillStyle = INK;
-      ctx.fillRect(x - 7, y - 7, 14, 14);
-      ctx.strokeStyle = BG; ctx.lineWidth = 2; ctx.strokeRect(x - 7, y - 7, 14, 14);
-      ctx.globalAlpha = 1;
-      label(x, y, wd.w, { active: focusWord === i, alpha: a });
-    });
-  }
-
-  if (g.explore) drawRocket(now / 1000);
-
-  updateTip();
-  requestAnimationFrame(frame);
 }
+map.addEventListener('click', e => {
+  const n = e.target.closest('.node');
+  if (!n) return;
+  const id = n.dataset.id;
+  const cap = id.split(':')[0];
+  if (CAPS.some(c => c.id === cap)) {
+    if (picked.has(cap) && current && current.split(':')[0] === cap) picked.delete(cap); else picked.add(cap);
+  }
+  showDetail(id);
+  refresh();
+  if (matchMedia('(max-width: 1100px)').matches) detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+defaultDetail();
+refresh();
 
-// ================= just for fun: a rocket orbiting the globe on the last step =================
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
-function orbitPoint(a) {
-  // a tilted circular orbit, fixed to the screen rather than the globe
-  const ro = 1.3;
-  let p = [Math.cos(a) * ro, 0, Math.sin(a) * ro];
-  const tx = 0.42, tz = -0.32;
-  p = [p[0], Math.cos(tx) * p[1] - Math.sin(tx) * p[2], Math.sin(tx) * p[1] + Math.cos(tx) * p[2]];
-  p = [Math.cos(tz) * p[0] - Math.sin(tz) * p[1], Math.sin(tz) * p[0] + Math.cos(tz) * p[1], p[2]];
-  const x = CX + p[0] * R * zoom, y = CY - p[1] * R * zoom;
-  // hidden while it passes behind the globe
-  const hidden = p[2] < 0 && Math.hypot(x - CX, y - CY) < R * zoom;
-  return { x, y, z: p[2], hidden };
-}
-function drawRocket(t) {
-  const a = REDUCED ? 0.6 : t * 1.1;
-  // faint orbit path
-  ctx.fillStyle = 'rgba(244,239,233,0.14)';
-  for (let k = 0; k < 120; k += 2) {
-    const o = orbitPoint(k / 120 * Math.PI * 2);
-    if (!o.hidden) ctx.fillRect(o.x - 1, o.y - 1, 2, 2);
-  }
-  // exhaust trail
-  for (let k = 1; k <= 28; k++) {
-    const o = orbitPoint(a - k * 0.03);
-    if (o.hidden) continue;
-    const f = 1 - k / 28;
-    ctx.fillStyle = `rgba(254,79,2,${0.8 * f})`;
-    const s = 2 + 6 * f;
-    ctx.fillRect(o.x - s / 2, o.y - s / 2, s, s);
-  }
-  const o = orbitPoint(a);
-  if (o.hidden) return;
-  const ahead = orbitPoint(a + 0.02);
-  const scale = 4.2 * (0.85 + 0.15 * o.z);
-  ctx.save();
-  ctx.translate(o.x, o.y);
-  ctx.rotate(Math.atan2(ahead.y - o.y, ahead.x - o.x));
-  ctx.scale(scale, scale);
-  const px = (c, x, y, w, h) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
-  const flicker = REDUCED ? 1 : 0.6 + 0.4 * Math.abs(Math.sin(t * 23));
-  ctx.globalAlpha = flicker;
-  px(ORANGE, -8, -1, 2, 2);          // flame
-  px('#ffb27a', -9.5, -0.5, 1.5, 1);
-  ctx.globalAlpha = 1;
-  px(INK, -6, -2, 9, 4);             // body
-  px(INK, 3, -1.5, 1.5, 3);          // nose
-  px(ORANGE, 4.5, -1, 1.5, 2);       // nose tip
-  px(BG, 0, -1, 2, 2);               // window
-  px(ORANGE, 0.5, -0.5, 1, 1);
-  px(ORANGE, -6, -4, 2.5, 2);        // fins
-  px(ORANGE, -6, 2, 2.5, 2);
-  ctx.restore();
-}
 
-go(clamp(parseInt(location.hash.slice(1)) || 0, 0, STEPS.length - 1));
-document.fonts.ready.then(() => requestAnimationFrame(frame));
+// ---------- the published numbers count up once ----------
+function countUp(el) {
+  const raw = el.dataset.v, m = raw.match(/[\d.]+/);
+  if (!m || REDUCED) return;
+  const target = parseFloat(m[0]), t0 = performance.now();
+  const tick = now => {
+    const p = Math.min(1, (now - t0) / 1100), e = 1 - Math.pow(1 - p, 3);
+    const v = target * e;
+    el.textContent = raw.replace(m[0], Number.isInteger(target) ? Math.round(v) : v.toFixed(1));
+    if (p < 1) requestAnimationFrame(tick); else el.textContent = raw;
+  };
+  requestAnimationFrame(tick);
+}
+const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { countUp(e.target); io.unobserve(e.target); } }), { threshold: 0.6 });
+document.querySelectorAll('.stat b').forEach(b => io.observe(b));
+
+// ---------- query flow: orthogonal lines from each picked column into the one query plan ----------
+const svg = document.getElementById('flow');
+const wrap = document.querySelector('.map-wrap');
+let paths = [];
+function layoutFlow() {
+  svg.innerHTML = '';
+  paths = [];
+  if (!picked.size || matchMedia('(max-width: 860px)').matches) return;
+  const base = wrap.getBoundingClientRect();
+  // every line ends on the engine's top edge, just above its title
+  const eng = map.querySelector('.engine').getBoundingClientRect();
+  const tx = eng.left + 96 - base.left, ty = eng.top - base.top;
+  const fns = CAPS.filter(c => picked.has(c.id)).map(c => map.querySelector(`.fn-row[data-cap="${c.id}"]`).getBoundingClientRect());
+  const engineTop = map.querySelector('.engine').getBoundingClientRect().top - base.top;
+  fns.forEach((r, k) => {
+    const x = r.left + r.width / 2 - base.left, y0 = r.bottom - base.top;
+    // drop into the gap above the engine, run across on a lane, then down into the target
+    const lane = y0 + 14 + k * 5;
+    const into = tx + (k - (fns.length - 1) / 2) * 8;
+    const d = `M${x},${y0} L${x},${lane} L${into},${lane} L${into},${ty}`;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', '#fe4f02');
+    path.setAttribute('stroke-width', '1.5');
+    path.setAttribute('opacity', '0.7');
+    svg.appendChild(path);
+    const len = path.getTotalLength();
+    path.style.strokeDasharray = len;
+    path.style.strokeDashoffset = REDUCED ? 0 : len;
+    if (!REDUCED) path.animate([{ strokeDashoffset: len }, { strokeDashoffset: 0 }], { duration: 600, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'forwards' });
+    const dots = [0, 1, 2].map(() => {
+      const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      r.setAttribute('width', 5); r.setAttribute('height', 5); r.setAttribute('fill', '#fe4f02');
+      svg.appendChild(r);
+      return r;
+    });
+    paths.push({ path, len, dots, phase: k * 0.17 });
+  });
+  document.querySelector('.engine').classList.toggle('live', picked.size > 0);
+}
+function animateFlow(now) {
+  const t = now / 1000;
+  for (const p of paths) p.dots.forEach((dot, i) => {
+    const f = ((t * 0.45 + p.phase + i / 3) % 1);
+    const pt = p.path.getPointAtLength(f * p.len);
+    dot.setAttribute('x', pt.x - 2.5); dot.setAttribute('y', pt.y - 2.5);
+    dot.setAttribute('opacity', Math.sin(f * Math.PI).toFixed(2));
+  });
+  requestAnimationFrame(animateFlow);
+}
+const oldRefresh = refresh;
+refresh = function () { oldRefresh(); layoutFlow(); if (!picked.size) document.querySelector('.engine').classList.remove('live'); };
+addEventListener('resize', layoutFlow);
+if (!REDUCED) requestAnimationFrame(animateFlow);
+
+// ---------- a few orange pixels blink slowly on the lattice ----------
+const px = document.getElementById('pixels'), pctx = px.getContext('2d');
+function sizePixels() { px.width = innerWidth; px.height = innerHeight; }
+sizePixels(); addEventListener('resize', sizePixels);
+const SEEDS = Array.from({ length: 26 }, (_, k) => ({ gx: (k * 37) % 41, gy: (k * 53) % 23, sp: 0.25 + (k % 5) * 0.08, ph: k * 1.7 }));
+function drawPixels(now) {
+  const t = now / 1000;
+  pctx.clearRect(0, 0, px.width, px.height);
+  for (const s of SEEDS) {
+    const a = Math.max(0, Math.sin(t * s.sp + s.ph)) ** 3 * 0.55;
+    if (a < 0.02) continue;
+    pctx.fillStyle = `rgba(254,79,2,${a})`;
+    const x = (s.gx * 54) % (px.width + 54), y = (s.gy * 54) % (px.height + 54);
+    pctx.fillRect(x - 3, y - 3, 6, 6);
+  }
+  if (!REDUCED) requestAnimationFrame(drawPixels);
+}
+requestAnimationFrame(drawPixels);
 </script>
 </body>
 </html>
