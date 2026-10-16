@@ -339,7 +339,7 @@ function defineSteps() {
         <div class="chips" id="examples">${['multi-vector', '(?i)bm25', 'late interaction', 'p99', 'filter(s|ing)?', '\\d+ ms'].map(q => `<button>${esc(q)}</button>`).join('')}</div>
         <div class="card" style="margin-top:14px"><div class="rows" id="live"></div><p class="txt mono small" id="plan"></p></div>
         <div id="hits"></div>
-        <div class="links"><a href="/">How TopK's multi-vector search works →</a></div>`,
+        <div class="links"><a href="/multi-vector/">How TopK's multi-vector search works →</a></div>`,
       grid: { mode: 'live' },
       after: () => wireTry(),
     },
