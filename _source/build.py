@@ -12,7 +12,7 @@ import markdown
 
 ROOT = Path(__file__).parent
 OUT = ROOT.parent  # site is written to the repo root
-GENERATED = ["index.html", "work", "about", "newsletter", "posts", "feed.xml"]
+GENERATED = ["index.html", "writing", "work", "about", "newsletter", "posts", "feed.xml"]
 CFG = json.loads((ROOT / "config.json").read_text())
 DRAFTS = "--drafts" in sys.argv
 
@@ -58,7 +58,7 @@ def parse(path):
     return meta
 
 def page(title, content, active="", desc=""):
-    nav = [("Blog", "/", "home"), ("Work with me", "/work/", "work"),
+    nav = [("Blog", "/", "home"), ("Writing", "/writing/", "writing"), ("Work with me", "/work/", "work"),
            ("Newsletter", "/newsletter/", "newsletter"), ("About", "/about/", "about")]
     navhtml = "".join(f'<a href="{u}"{" class=on" if k == active else ""}>{n}</a>' for n, u, k in nav)
     links = "".join(f'<a href="{u}">{n}</a>' for n, u in CFG["links"].items())

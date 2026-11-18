@@ -12,7 +12,7 @@ I help companies ship retrieval and agent systems that hold up in production.
 
 ## Background
 
-Former head of developer relations at Qdrant, LanceDB and Cognee. I've seen how hundreds of teams build retrieval, and where they get stuck.
+Former Director of Developer Relations at Qdrant, then hands-on AI and retrieval work at LanceDB, Cognee and Tigris Data. Before that, technical writing at Amazon and IONOS. 50+ published posts on vector search, RAG and agent memory: see [Writing](/writing/).
 
 ## Get in touch
 

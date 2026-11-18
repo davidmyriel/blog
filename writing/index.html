@@ -1,0 +1,93 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Writing &amp; talks – Dave Myriel</title>
+<meta name="description" content="I build AI agents and retrieval systems for companies, and I write up what actually happens inside real deployments: numbers, failures and the fix that worked.">
+<link rel="alternate" type="application/rss+xml" href="/feed.xml" title="Dave Myriel">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--fg:#1a1a1a;--muted:#6b6b6b;--line:#e6e6e6;--link:#0b63ce;--bg:#fff;--tag:#f3f4f6;--code:#f6f8fa}
+@media(prefers-color-scheme:dark){:root{--fg:#e8e8e8;--muted:#9a9a9a;--line:#2c2c2c;--link:#6aa8ff;--bg:#121212;--tag:#1f1f1f;--code:#1b1b1b}}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,sans-serif;color:var(--fg);background:var(--bg);line-height:1.65;font-size:17px}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+header{border-bottom:1px solid var(--line)}.bar{max-width:760px;margin:0 auto;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.brand{font-weight:700;color:var(--fg)}nav a{margin-left:18px;color:var(--muted);font-size:15px}nav a.on{color:var(--fg);font-weight:600}
+main{max-width:760px;margin:0 auto;padding:36px 20px 80px}h1{font-size:30px;line-height:1.25;margin:0 0 10px}h2{font-size:21px;margin:36px 0 8px}
+.lede{color:var(--muted);margin:0 0 28px}.hire{border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:28px 0;font-size:15.5px}
+.post{display:flex;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid var(--line)}.post a{font-weight:600;color:var(--fg)}.post a:hover{color:var(--link)}
+.desc{color:var(--muted);font-size:15px;margin-top:2px}.date{color:var(--muted);font-size:14px;white-space:nowrap;font-family:ui-monospace,monospace}
+.tag{display:inline-block;background:var(--tag);border-radius:4px;padding:0 7px;font-size:12.5px;color:var(--muted);margin-right:6px}
+.draft{color:#b45309;font-weight:600}
+table{border-collapse:collapse;width:100%;font-size:15px;margin:14px 0}th,td{border-bottom:1px solid var(--line);padding:8px 6px;text-align:left}
+code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.9em}pre{background:var(--code);padding:14px;border-radius:8px;overflow:auto}pre code{padding:0}
+blockquote{border-left:3px solid var(--link);margin:20px 0;padding:2px 0 2px 16px;color:var(--muted)}
+img{max-width:100%}footer{border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;padding:22px}
+footer a{color:var(--muted);margin:0 8px}input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);width:260px;max-width:100%}
+button{font:inherit;padding:8px 14px;border:0;border-radius:6px;background:var(--link);color:#fff;cursor:pointer}
+</style></head><body>
+<header><div class="bar"><a class="brand" href="/">Dave Myriel</a><nav><a href="/">Blog</a><a href="/writing/" class=on>Writing</a><a href="/work/">Work with me</a><a href="/newsletter/">Newsletter</a><a href="/about/">About</a></nav></div></header>
+<main><h1>Writing &amp; talks</h1><p>50+ technical posts since 2023 on vector search, RAG and agent memory, written for the companies I worked with.</p>
+<h2>Tigris Data (2026)</h2>
+<ul>
+<li>The Most Expensive ClickHouse Query Is the Restore (Jul 2026)</li>
+<li>Where Does the Agent Live? (Jul 2026)</li>
+<li>Evaluating LangGraph Agents (Jun 2026)</li>
+<li>Soft Delete (Jun 2026)</li>
+<li>Own Your AI Context with Basic Memory (May 2026)</li>
+<li>Self-Updating Knowledge Base for Under $10 (May 2026)</li>
+<li>The Immutable Agent (Apr 2026)</li>
+<li>Agent Kit (Apr 2026)</li>
+<li>Fifty Agents for the Price of One Bucket (Apr 2026)</li>
+<li>Agent Plugins (Apr 2026)</li>
+<li>Multi-Region and Dual-Region Buckets (Mar 2026)</li>
+<li>Multimodal Ingestion with Mixpeek (Mar 2026)</li>
+<li>RAG Chunking with Forked Buckets (Jan 2026)</li>
+</ul>
+<p>More at <a href="https://www.tigrisdata.com/blog/">tigrisdata.com/blog</a></p>
+<h2>Cognee (2025–2026)</h2>
+<ul>
+<li>Why Agent Memory Breaks at Scale</li>
+<li>Grounding AI Memory with Ontologies</li>
+<li>Agents Don't Need Another Protocol, They Need a Good CLI</li>
+<li>Cognee's CLI Replaces MCP OAuth in 100 Lines</li>
+<li>Cut Vector Memory 8x with Qdrant's TurboQuant</li>
+</ul>
+<p>More at <a href="https://www.cognee.ai/blog">cognee.ai/blog</a></p>
+<h2>LanceDB (2025)</h2>
+<ul>
+<li>How Cognee Builds AI Memory Layers (Sep 2025)</li>
+<li>RaBitQ Quantization (Sep 2025)</li>
+<li>Semantic Video Recommendations with TwelveLabs (Sep 2025)</li>
+<li>Netflix's Media Data Lake (Aug 2025)</li>
+<li>WikiSearch: Full-Text Search on 41M Documents (Aug 2025)</li>
+<li>The Multimodal Lakehouse (Jun 2025)</li>
+</ul>
+<p>More at <a href="https://lancedb.com/blog/">lancedb.com/blog</a></p>
+<h2>Qdrant (2023–2025)</h2>
+<ul>
+<li>Hotel Search with Superlinked and Qdrant (Apr 2025)</li>
+<li>Building a Facial Recognition System (Dec 2024)</li>
+<li>Best Practices in RAG Evaluation (Nov 2024)</li>
+<li>Blog-Reading Chatbot with GPT-4o (May 2024)</li>
+<li>Integrating Qdrant and LangChain (Mar 2024)</li>
+<li>Multitenancy and Custom Sharding (Feb 2024)</li>
+<li>RAG Is Dead. Long Live RAG! (Feb 2024)</li>
+<li>Release posts for Qdrant 1.8, 1.11, 1.12, 1.13 and 1.14</li>
+</ul>
+<p>More at <a href="https://qdrant.tech/blog/">qdrant.tech/blog</a></p>
+<h2>Elsewhere</h2>
+<ul>
+<li>InfoWorld: "Why vector databases aren't just databases" (Sep 2024)</li>
+<li>ADMIN magazine: "How Vector Databases Work and When They're Used" (Dec 2024)</li>
+</ul>
+<h2>Talks</h2>
+<ul>
+<li><strong>AI and Data Privacy: Vector Storage for Agentic Systems</strong>, Redpanda Streamfest, online (Dec 2024)</li>
+<li><strong>Data Bytes meetup</strong>, San Francisco, with Airbyte and AgentCloud (Apr 2024)</li>
+<li><strong>5 Minute RAG</strong>, Qdrant online event (co-host)</li>
+</ul>
+<h2>Open source</h2>
+<ul>
+<li>Docling: <a href="https://github.com/docling-project/docling/pull/4983">RAG example with TopK</a> (merged Oct 2026)</li>
+<li><a href="https://github.com/davidmyriel">github.com/davidmyriel</a></li>
+</ul></main>
+<footer><a href="https://www.linkedin.com/in/davidmyriel">LinkedIn</a><a href="https://github.com/davidmyriel">GitHub</a><a href="https://x.com/davidmyriel">X</a><a href="https://bsky.app/profile/vectorsearch.bsky.social">Bluesky</a><a href="/feed.xml">RSS</a><br>© 2026 Dave Myriel</footer>
+</body></html>
