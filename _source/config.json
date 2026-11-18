@@ -1,7 +1,7 @@
 {
   "name": "Dave Myriel",
   "domain": "davidmyriel.com",
-  "tagline": "I build AI agents and retrieval systems for companies, and I write up what actually happens inside real deployments: numbers, failures and the fix that worked.",
+  "tagline": "Notes on vector search, RAG and agent memory from building retrieval systems for companies. Previously DevRel at Qdrant; writing for LanceDB, Cognee and Tigris.",
   "email": "davidmyriel@gmail.com",
   "newsletter_form_action": "",
   "links": {

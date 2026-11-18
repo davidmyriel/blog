@@ -12,7 +12,7 @@ import markdown
 
 ROOT = Path(__file__).parent
 OUT = ROOT.parent  # site is written to the repo root
-GENERATED = ["index.html", "writing", "work", "about", "newsletter", "posts", "feed.xml"]
+GENERATED = ["index.html", "talks", "writing", "work", "about", "newsletter", "posts", "feed.xml"]
 CFG = json.loads((ROOT / "config.json").read_text())
 DRAFTS = "--drafts" in sys.argv
 
@@ -28,7 +28,7 @@ main{max-width:760px;margin:0 auto;padding:36px 20px 80px}h1{font-size:30px;line
 .post{display:flex;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid var(--line)}.post a{font-weight:600;color:var(--fg)}.post a:hover{color:var(--link)}
 .desc{color:var(--muted);font-size:15px;margin-top:2px}.date{color:var(--muted);font-size:14px;white-space:nowrap;font-family:ui-monospace,monospace}
 .tag{display:inline-block;background:var(--tag);border-radius:4px;padding:0 7px;font-size:12.5px;color:var(--muted);margin-right:6px}
-.draft{color:#b45309;font-weight:600}
+.draft{color:#b45309;font-weight:600}.ext{color:var(--muted);font-size:13px}h2{border-bottom:1px solid var(--line);padding-bottom:4px}
 table{border-collapse:collapse;width:100%;font-size:15px;margin:14px 0}th,td{border-bottom:1px solid var(--line);padding:8px 6px;text-align:left}
 code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.9em}pre{background:var(--code);padding:14px;border-radius:8px;overflow:auto}pre code{padding:0}
 blockquote{border-left:3px solid var(--link);margin:20px 0;padding:2px 0 2px 16px;color:var(--muted)}
@@ -58,7 +58,7 @@ def parse(path):
     return meta
 
 def page(title, content, active="", desc=""):
-    nav = [("Blog", "/", "home"), ("Writing", "/writing/", "writing"), ("Work with me", "/work/", "work"),
+    nav = [("Blog", "/", "home"), ("Talks", "/talks/", "talks"), ("Work with me", "/work/", "work"),
            ("Newsletter", "/newsletter/", "newsletter"), ("About", "/about/", "about")]
     navhtml = "".join(f'<a href="{u}"{" class=on" if k == active else ""}>{n}</a>' for n, u, k in nav)
     links = "".join(f'<a href="{u}">{n}</a>' for n, u in CFG["links"].items())
@@ -108,17 +108,31 @@ def build():
                 f'{p["html"]}{HIRE}')
         write(f"posts/{p['slug']}/index.html", page(p["title"], body, "home", p.get("description", "")))
 
-    rows = ""
+    # Homepage: every post (own field reports + posts published elsewhere), newest first, grouped by year
+    entries = []
     for p in posts:
-        tags = "".join(f'<span class="tag">{html.escape(t)}</span>' for t in p.get("tags", []))
-        d = "draft" if p.get("draft") else p.get("date", "")
-        rows += (f'<div class="post"><div><a href="/posts/{p["slug"]}/">{html.escape(p["title"])}</a>'
-                 f'<div class="desc">{tags}{html.escape(p.get("description",""))}</div></div>'
-                 f'<div class="date">{d}</div></div>')
-    if not rows:
-        rows = '<p class="desc">First field report coming soon. <a href="/newsletter/">Get it by email →</a></p>'
-    home = (f'<h1>{CFG["name"]}</h1><p class="lede">{html.escape(CFG["tagline"])}</p>{HIRE}'
-            f'<h2>Field reports</h2>{rows}')
+        entries.append({"title": p["title"], "url": f"/posts/{p['slug']}/", "date": str(p.get("date", "")),
+                        "source": "draft" if p.get("draft") else "Field report", "own": True})
+    ext = ROOT / "external_posts.json"
+    if ext.exists():
+        for e in json.loads(ext.read_text()):
+            entries.append({**e, "own": False})
+    entries.sort(key=lambda e: e["date"], reverse=True)
+    months = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
+    rows, year = "", None
+    for e in entries:
+        y = e["date"][:4]
+        if y != year:
+            rows += f"<h2>{y}</h2>"
+            year = y
+        mon = months[int(e["date"][5:7]) - 1] if len(e["date"]) >= 7 else ""
+        arrow = "" if e["own"] else ' <span class="ext">↗</span>'
+        target = "" if e["own"] else ' target="_blank" rel="noopener"'
+        rows += (f'<div class="post"><div><a href="{e["url"]}"{target}>{html.escape(e["title"])}</a>{arrow}'
+                 f'<div class="desc"><span class="tag">{html.escape(e["source"])}</span></div></div>'
+                 f'<div class="date">{mon}</div></div>')
+    home = (f'<h1>{CFG["name"]}</h1><p class="lede">{html.escape(CFG["tagline"])}</p>'
+            f'{rows}{HIRE}')
     if CFG.get("projects"):
         home += "<h2>Projects</h2>" + "".join(
             f'<div class="post"><div><a href="{u}">{html.escape(t)}</a><div class="desc">{html.escape(d)}</div></div></div>'
