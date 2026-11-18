@@ -66,7 +66,8 @@ def contact_form(subject="Website contact", fields=("name", "email", "message"),
     inputs += '<input type="email" name="email" placeholder="you@company.com" required>'
     if "message" in fields:
         inputs += '<textarea name="message" rows="6" placeholder="What are you building?" required></textarea>'
-    return (f'<form class="contact" data-endpoint="{ep}">'
+    enc = html.escape(CFG.get("contact_email_encoded", ""))
+    return (f'<form class="contact" data-endpoint="{ep}" data-k="{enc}">'
             f'<input type="hidden" name="_subject" value="{html.escape(subject)}">'
             '<input type="text" name="_gotcha" style="display:none" tabindex="-1" autocomplete="off">'
             f'{inputs}<button type="submit">{button}</button><p class="desc form-msg"></p></form>')
@@ -76,7 +77,16 @@ document.querySelectorAll('form.contact').forEach(function (f) {
   f.addEventListener('submit', function (e) {
     e.preventDefault();
     var msg = f.querySelector('.form-msg'), ep = f.dataset.endpoint;
-    if (!ep) { msg.textContent = 'This form is not connected yet.'; return; }
+    if (!ep) {
+      // No form service: open the visitor's email app with the message filled in.
+      // The address is stored encoded and only decoded on submit, so it never sits in the page as text.
+      if (!f.dataset.k) { msg.textContent = 'This form is not connected yet.'; return; }
+      var to = atob(f.dataset.k).split('').reverse().join(''), d = new FormData(f);
+      var body = (d.get('message') || 'Please add me to the newsletter.') + '\n\n' + (d.get('name') || '') + '\n' + d.get('email');
+      location.href = 'mai' + 'lto:' + to + '?subject=' + encodeURIComponent(d.get('_subject')) + '&body=' + encodeURIComponent(body);
+      msg.textContent = 'Your email app should open with the message ready to send.';
+      return;
+    }
     msg.textContent = 'Sending…';
     fetch(ep, {method: 'POST', body: new FormData(f), headers: {Accept: 'application/json'}})
       .then(function (r) { if (!r.ok) throw r; f.reset(); msg.textContent = 'Thanks, I got your message and will reply soon.'; })

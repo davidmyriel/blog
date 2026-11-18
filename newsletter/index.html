@@ -24,14 +24,26 @@ footer a{color:var(--muted);margin:0 8px}form.contact{display:flex;flex-directio
 button{font:inherit;padding:8px 14px;border:0;border-radius:6px;background:var(--link);color:#fff;cursor:pointer}
 </style></head><body>
 <header><div class="bar"><a class="brand" href="/">David Myriel</a><nav><a href="/">Blog</a><a href="/talks/">Talks</a><a href="/work/">Work with me</a><a href="/newsletter/" class=on>Newsletter</a><a href="/about/">About</a></nav></div></header>
-<main><h1>Newsletter</h1><p>One field report when I have something worth sending. No filler.</p><form class="contact" data-endpoint=""><input type="hidden" name="_subject" value="Newsletter signup"><input type="text" name="_gotcha" style="display:none" tabindex="-1" autocomplete="off"><input type="email" name="email" placeholder="you@company.com" required><button type="submit">Subscribe</button><p class="desc form-msg"></p></form></main>
+<main><h1>Newsletter</h1><p>One field report when I have something worth sending. No filler.</p><form class="contact" data-endpoint="" data-k="bW9jLmxpYW1nQGxlaXJ5bWRpdmFk"><input type="hidden" name="_subject" value="Newsletter signup"><input type="text" name="_gotcha" style="display:none" tabindex="-1" autocomplete="off"><input type="email" name="email" placeholder="you@company.com" required><button type="submit">Subscribe</button><p class="desc form-msg"></p></form></main>
 <footer><a href="https://www.linkedin.com/in/davidmyriel">LinkedIn</a><a href="https://github.com/davidmyriel">GitHub</a><a href="https://x.com/davidmyriel">X</a><a href="https://bsky.app/profile/vectorsearch.bsky.social">Bluesky</a><a href="/feed.xml">RSS</a><br>© 2026 David Myriel</footer>
 <script>
 document.querySelectorAll('form.contact').forEach(function (f) {
   f.addEventListener('submit', function (e) {
     e.preventDefault();
     var msg = f.querySelector('.form-msg'), ep = f.dataset.endpoint;
-    if (!ep) { msg.textContent = 'This form is not connected yet.'; return; }
+    if (!ep) {
+      // No form service: open the visitor's email app with the message filled in.
+      // The address is stored encoded and only decoded on submit, so it never sits in the page as text.
+      if (!f.dataset.k) { msg.textContent = 'This form is not connected yet.'; return; }
+      var to = atob(f.dataset.k).split('').reverse().join(''), d = new FormData(f);
+      var body = (d.get('message') || 'Please add me to the newsletter.') + '
+
+' + (d.get('name') || '') + '
+' + d.get('email');
+      location.href = 'mai' + 'lto:' + to + '?subject=' + encodeURIComponent(d.get('_subject')) + '&body=' + encodeURIComponent(body);
+      msg.textContent = 'Your email app should open with the message ready to send.';
+      return;
+    }
     msg.textContent = 'Sending…';
     fetch(ep, {method: 'POST', body: new FormData(f), headers: {Accept: 'application/json'}})
       .then(function (r) { if (!r.ok) throw r; f.reset(); msg.textContent = 'Thanks, I got your message and will reply soon.'; })
