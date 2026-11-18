@@ -1,0 +1,2 @@
+pipecat-ai[anthropic,cartesia,deepgram,silero,websocket,runner]==1.16.0
+python-dotenv
