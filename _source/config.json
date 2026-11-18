@@ -1,0 +1,29 @@
+{
+  "name": "Dave Myriel",
+  "domain": "davidmyriel.com",
+  "tagline": "I build AI agents and retrieval systems for companies, and I write up what actually happens inside real deployments: numbers, failures and the fix that worked.",
+  "email": "davidmyriel@gmail.com",
+  "newsletter_form_action": "",
+  "links": {
+    "GitHub": "https://github.com/",
+    "LinkedIn": "https://www.linkedin.com/",
+    "X": "https://x.com/"
+  },
+  "projects": [
+    [
+      "TopK product map",
+      "/topk/",
+      "Every part of TopK on one page."
+    ],
+    [
+      "Multi-vector search tour",
+      "/topk/multi-vector/",
+      "Interactive walkthrough of multi-vector retrieval."
+    ],
+    [
+      "Regex search tour",
+      "/topk/regex/",
+      "How fast regex search works with sparse n-grams."
+    ]
+  ]
+}
