@@ -1,0 +1,29 @@
+{
+  "name": "David Myriel",
+  "domain": "davidmyriel.com",
+  "tagline": "Notes on vector search, RAG and agent memory from building retrieval systems for companies. Previously DevRel at Qdrant; writing for LanceDB, Cognee and Tigris.",
+  "links": {
+    "LinkedIn": "https://www.linkedin.com/in/davidmyriel",
+    "GitHub": "https://github.com/davidmyriel",
+    "X": "https://x.com/davidmyriel",
+    "Bluesky": "https://bsky.app/profile/vectorsearch.bsky.social"
+  },
+  "projects": [
+    [
+      "TopK product map",
+      "/topk/",
+      "Every part of TopK on one page."
+    ],
+    [
+      "Multi-vector search tour",
+      "/topk/multi-vector/",
+      "Interactive walkthrough of multi-vector retrieval."
+    ],
+    [
+      "Regex search tour",
+      "/topk/regex/",
+      "How fast regex search works with sparse n-grams."
+    ]
+  ],
+  "contact_url": "https://www.linkedin.com/in/davidmyriel"
+}

@@ -362,7 +362,7 @@ const STEPS = [
       <div class="chips" id="pick">${WORDS.map((w, i) => `<button data-i="${i}">${w.w}</button>`).join('')}<button data-i="-1">all words</button></div>
       <label class="k">LANDMARKS PER WORD <input id="kin" type="range" min="1" max="32" value="${state.K}" /> <output id="kout">${state.K}</output></label>
       <div class="strip-wrap" style="margin-top:16px">${stripHead('qx', 'QUERY')}<canvas class="strip" id="qx" width="512" height="64"></canvas></div>
-      <div class="links"><a href="/multi-vector-demo/">Watch the animated version →</a></div>`,
+      <div class="links"><a href="/topk/multi-vector-demo/">Watch the animated version →</a></div>`,
     globe: { anchors: 1, query: true, explore: true, zoom: 1.05, kept: true },
     after: () => wireExplore(),
   },
