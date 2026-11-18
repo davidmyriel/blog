@@ -2,7 +2,7 @@
 title: About
 slug: about
 ---
-<img src="/images/dave.jpg" alt="Dave Myriel" class="avatar-lg">
+<img src="/images/dave.jpg" alt="David Myriel" class="avatar-lg">
 
 I'm Dave. I build AI agents and retrieval systems for clients through my own company in Toronto.
 
