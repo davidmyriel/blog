@@ -16,6 +16,4 @@ Former Director of Developer Relations at Qdrant, then hands-on AI and retrieval
 
 <h2 id="contact">Get in touch</h2>
 
-Tell me a bit about your project and I'll get back to you.
-
-{{contact_form}}
+[Message me on LinkedIn]({{contact_url}}) with a short note about your project and I'll get back to you.

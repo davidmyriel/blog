@@ -20,10 +20,10 @@ table{border-collapse:collapse;width:100%;font-size:15px;margin:14px 0}th,td{bor
 code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.9em}pre{background:var(--code);padding:14px;border-radius:8px;overflow:auto}pre code{padding:0}
 blockquote{border-left:3px solid var(--link);margin:20px 0;padding:2px 0 2px 16px;color:var(--muted)}
 img{max-width:100%}footer{border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;padding:22px}
-footer a{color:var(--muted);margin:0 8px}form.contact{display:flex;flex-direction:column;gap:10px;max-width:520px}form.contact input,form.contact textarea{width:100%}textarea{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}form.contact button{align-self:flex-start}input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);width:260px;max-width:100%}
+footer a{color:var(--muted);margin:0 8px}input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);width:260px;max-width:100%}
 button{font:inherit;padding:8px 14px;border:0;border-radius:6px;background:var(--link);color:#fff;cursor:pointer}
 </style></head><body>
-<header><div class="bar"><a class="brand" href="/">David Myriel</a><nav><a href="/">Blog</a><a href="/talks/">Talks</a><a href="/work/" class=on>Work with me</a><a href="/newsletter/">Newsletter</a><a href="/about/">About</a></nav></div></header>
+<header><div class="bar"><a class="brand" href="/">David Myriel</a><nav><a href="/">Blog</a><a href="/talks/">Talks</a><a href="/work/" class=on>Work with me</a><a href="/about/">About</a></nav></div></header>
 <main><h1>Work with me</h1><p>I help companies ship retrieval and agent systems that hold up in production.</p>
 <h2>What I do</h2>
 <ul>
@@ -35,32 +35,6 @@ button{font:inherit;padding:8px 14px;border:0;border-radius:6px;background:var(-
 <p>Former Director of Developer Relations at Qdrant, then hands-on AI and retrieval work at LanceDB, Cognee and Tigris Data. Before that, technical writing at Amazon and IONOS. 50+ published posts on vector search, RAG and agent memory: see the <a href="/">blog</a>.</p>
 <h2 id="contact">Get in touch</h2>
 
-<p>Tell me a bit about your project and I'll get back to you.</p>
-<form class="contact" data-endpoint="" data-k="bW9jLmxpYW1nQGxlaXJ5bWRpdmFk"><input type="hidden" name="_subject" value="Website contact"><input type="text" name="_gotcha" style="display:none" tabindex="-1" autocomplete="off"><input name="name" placeholder="Your name" required><input type="email" name="email" placeholder="you@company.com" required><textarea name="message" rows="6" placeholder="What are you building?" required></textarea><button type="submit">Send</button><p class="desc form-msg"></p></form></main>
+<p><a href="https://www.linkedin.com/in/davidmyriel">Message me on LinkedIn</a> with a short note about your project and I'll get back to you.</p></main>
 <footer><a href="https://www.linkedin.com/in/davidmyriel">LinkedIn</a><a href="https://github.com/davidmyriel">GitHub</a><a href="https://x.com/davidmyriel">X</a><a href="https://bsky.app/profile/vectorsearch.bsky.social">Bluesky</a><a href="/feed.xml">RSS</a><br>© 2026 David Myriel</footer>
-<script>
-document.querySelectorAll('form.contact').forEach(function (f) {
-  f.addEventListener('submit', function (e) {
-    e.preventDefault();
-    var msg = f.querySelector('.form-msg'), ep = f.dataset.endpoint;
-    if (!ep) {
-      // No form service: open the visitor's email app with the message filled in.
-      // The address is stored encoded and only decoded on submit, so it never sits in the page as text.
-      if (!f.dataset.k) { msg.textContent = 'This form is not connected yet.'; return; }
-      var to = atob(f.dataset.k).split('').reverse().join(''), d = new FormData(f);
-      var body = (d.get('message') || 'Please add me to the newsletter.') + '
-
-' + (d.get('name') || '') + '
-' + d.get('email');
-      location.href = 'mai' + 'lto:' + to + '?subject=' + encodeURIComponent(d.get('_subject')) + '&body=' + encodeURIComponent(body);
-      msg.textContent = 'Your email app should open with the message ready to send.';
-      return;
-    }
-    msg.textContent = 'Sending…';
-    fetch(ep, {method: 'POST', body: new FormData(f), headers: {Accept: 'application/json'}})
-      .then(function (r) { if (!r.ok) throw r; f.reset(); msg.textContent = 'Thanks, I got your message and will reply soon.'; })
-      .catch(function () { msg.textContent = 'Something went wrong. Please try again in a minute.'; });
-  });
-});
-</script>
 </body></html>
