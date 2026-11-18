@@ -33,7 +33,7 @@ table{border-collapse:collapse;width:100%;font-size:15px;margin:14px 0}th,td{bor
 code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.9em}pre{background:var(--code);padding:14px;border-radius:8px;overflow:auto}pre code{padding:0}
 blockquote{border-left:3px solid var(--link);margin:20px 0;padding:2px 0 2px 16px;color:var(--muted)}
 img{max-width:100%}footer{border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;padding:22px}
-footer a{color:var(--muted);margin:0 8px}input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);width:260px;max-width:100%}
+footer a{color:var(--muted);margin:0 8px}form.contact{display:flex;flex-direction:column;gap:10px;max-width:520px}form.contact input,form.contact textarea{width:100%}textarea{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}form.contact button{align-self:flex-start}input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);width:260px;max-width:100%}
 button{font:inherit;padding:8px 14px;border:0;border-radius:6px;background:var(--link);color:#fff;cursor:pointer}
 """
 
@@ -52,10 +52,38 @@ def parse(path):
                     v = v.lower() == "true"
                 meta[k.strip()] = v
         body = m.group(2)
-    body = body.replace("{{email}}", CFG["email"])
+    body = body.replace("{{contact_form}}", contact_form())
     meta["html"] = markdown.markdown(body, extensions=["tables", "fenced_code"])
     meta["minutes"] = max(1, round(len(body.split()) / 230))
     return meta
+
+def contact_form(subject="Website contact", fields=("name", "email", "message"), button="Send"):
+    """A form that posts to a form service (e.g. Formspree), so no email address is ever published."""
+    ep = html.escape(CFG.get("contact_form_endpoint", ""))
+    inputs = ""
+    if "name" in fields:
+        inputs += '<input name="name" placeholder="Your name" required>'
+    inputs += '<input type="email" name="email" placeholder="you@company.com" required>'
+    if "message" in fields:
+        inputs += '<textarea name="message" rows="6" placeholder="What are you building?" required></textarea>'
+    return (f'<form class="contact" data-endpoint="{ep}">'
+            f'<input type="hidden" name="_subject" value="{html.escape(subject)}">'
+            '<input type="text" name="_gotcha" style="display:none" tabindex="-1" autocomplete="off">'
+            f'{inputs}<button type="submit">{button}</button><p class="desc form-msg"></p></form>')
+
+FORM_JS = """<script>
+document.querySelectorAll('form.contact').forEach(function (f) {
+  f.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var msg = f.querySelector('.form-msg'), ep = f.dataset.endpoint;
+    if (!ep) { msg.textContent = 'This form is not connected yet.'; return; }
+    msg.textContent = 'Sending…';
+    fetch(ep, {method: 'POST', body: new FormData(f), headers: {Accept: 'application/json'}})
+      .then(function (r) { if (!r.ok) throw r; f.reset(); msg.textContent = 'Thanks, I got your message and will reply soon.'; })
+      .catch(function () { msg.textContent = 'Something went wrong. Please try again in a minute.'; });
+  });
+});
+</script>"""
 
 def page(title, content, active="", desc=""):
     nav = [("Blog", "/", "home"), ("Talks", "/talks/", "talks"), ("Work with me", "/work/", "work"),
@@ -72,9 +100,10 @@ def page(title, content, active="", desc=""):
 <header><div class="bar"><a class="brand" href="/">{CFG['name']}</a><nav>{navhtml}</nav></div></header>
 <main>{content}</main>
 <footer>{links}<a href="/feed.xml">RSS</a><br>© {datetime.date.today().year} {CFG['name']}</footer>
+{FORM_JS if 'class="contact"' in content else ""}
 </body></html>"""
 
-HIRE = '<div class="hire">Need retrieval or agents built? I take a few consulting clients at a time. <a href="/work/">Work with me →</a></div>'
+HIRE = '<div class="hire">Need retrieval or agents built? I take a few consulting clients at a time. <a href="/work/#contact">Get in touch →</a></div>'
 
 def write(rel, content):
     p = OUT / rel
@@ -150,7 +179,7 @@ def build():
         form = (f'<form action="{action}" method="post" target="_blank">'
                 '<input type="email" name="email" placeholder="you@company.com" required> <button>Subscribe</button></form>')
     else:
-        form = f'<p>Email <strong>{CFG["email"]}</strong> with "subscribe" and I\'ll add you.</p>'
+        form = contact_form("Newsletter signup", fields=("email",), button="Subscribe")
     write("newsletter/index.html", page("Newsletter",
           f'<h1>Newsletter</h1><p>One field report when I have something worth sending. No filler.</p>{form}', "newsletter"))
 

@@ -2,8 +2,6 @@
   "name": "David Myriel",
   "domain": "davidmyriel.com",
   "tagline": "Notes on vector search, RAG and agent memory from building retrieval systems for companies. Previously DevRel at Qdrant; writing for LanceDB, Cognee and Tigris.",
-  "email": "davidmyriel@gmail.com",
-  "newsletter_form_action": "",
   "links": {
     "LinkedIn": "https://www.linkedin.com/in/davidmyriel",
     "GitHub": "https://github.com/davidmyriel",
@@ -26,5 +24,7 @@
       "/topk/regex/",
       "How fast regex search works with sparse n-grams."
     ]
-  ]
+  ],
+  "contact_form_endpoint": "",
+  "newsletter_form_action": ""
 }
