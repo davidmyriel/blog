@@ -10,50 +10,51 @@ Caller ──► Twilio ──(media stream WebSocket)──► Pipecat bot
 Caller ◄── Twilio ◄───────────────────────────────┘
 ```
 
-Built on Pipecat's development runner (`pipecat.runner`), which provides the
-`POST /` TwiML webhook and the `/ws` media-stream WebSocket for you.
 
-## Prerequisites
+## Deploy on Railway (always on)
 
-- Python 3.11+
-- API keys: [Anthropic](https://console.anthropic.com), [Deepgram](https://console.deepgram.com), [Cartesia](https://play.cartesia.ai)
-- A [Twilio](https://console.twilio.com) account with a voice-capable phone number
-- [ngrok](https://ngrok.com) (or any tunnel) so Twilio can reach your machine
+1. At [railway.app](https://railway.app): **New Project → Deploy from GitHub repo** and pick this repo.
+2. Open the service's **Settings**:
+   - **Root Directory:** `pipecat-twilio-claude`
+   - **Networking → Generate Domain.** Copy the address it shows.
+3. In **Variables**, add:
 
-## Setup
+   | Variable | Value |
+   |---|---|
+   | `ANTHROPIC_API_KEY` | from console.anthropic.com |
+   | `DEEPGRAM_API_KEY` | from console.deepgram.com |
+   | `CARTESIA_API_KEY` | from play.cartesia.ai |
+   | `TWILIO_ACCOUNT_SID` | Twilio Console → Account Info |
+   | `TWILIO_AUTH_TOKEN` | Twilio Console → Account Info |
+   | `ALLOWED_CALLERS` | **your own** phone number (the one you call from), e.g. `+16045551234`. Comma-separate several. |
+
+4. In Twilio: **Phone Numbers → your number → Configuration details → Voice**.
+   Set **A call comes in** to *Webhook*, `https://<your-railway-domain>/`, *HTTP POST*. Save.
+5. Call your Twilio number.
+
+Calls from numbers not in `ALLOWED_CALLERS` are rejected, and calls end after
+`MAX_CALL_MINUTES` (default 10). Railway's Deploy Logs show each call.
+
+## What's in here
+
+- `bot.py`: the voice pipeline (Deepgram → Claude → Cartesia).
+- `server.py`: the web server Twilio talks to. It checks that requests are
+  really from Twilio, rejects callers not on the allowlist, and enforces the
+  call time limit.
+- `Dockerfile`, `railway.json`: Railway build and deploy settings.
+
+## Run locally (optional)
 
 ```bash
 cd pipecat-twilio-claude
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # then fill in your keys
+cp .env.example .env          # fill in keys, ALLOWED_CALLERS and PUBLIC_HOST
+ngrok http 7860               # in another terminal; put its hostname in PUBLIC_HOST
+python server.py
 ```
 
-## Run
-
-1. Start a tunnel to port 7860:
-
-   ```bash
-   ngrok http 7860
-   ```
-
-   Note the hostname it gives you, e.g. `abc123.ngrok.app`.
-
-2. Start the bot, passing that hostname (no `https://`):
-
-   ```bash
-   python bot.py -t twilio -x abc123.ngrok.app
-   ```
-
-3. In the Twilio Console, open **Phone Numbers → Manage → Active numbers →
-   your number → Voice Configuration** and set **A call comes in** to:
-
-   - Webhook: `https://abc123.ngrok.app/`
-   - Method: `HTTP POST`
-
-   Save.
-
-4. Call your Twilio number. Claude greets you; ask it anything.
+Then point the Twilio webhook at `https://<ngrok-host>/` as in step 4.
 
 ## Customize
 
@@ -63,8 +64,3 @@ cp .env.example .env   # then fill in your keys
 - **Voice:** set `CARTESIA_VOICE_ID` to any voice from the Cartesia library.
 - **Tools:** Pipecat supports function calling, so you can give Claude tools
   (weather, a database lookup, etc.) — see the Pipecat docs on function calling.
-
-## Deploying
-
-The ngrok setup is for development. For production, run `bot.py` on a host
-with a public HTTPS URL (or Pipecat Cloud) and point the Twilio webhook there.

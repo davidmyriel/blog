@@ -5,18 +5,22 @@ Call your Twilio number, ask a question out loud, and Claude answers by voice.
 Pipeline:  caller audio -> Deepgram (speech-to-text) -> Claude (LLM)
            -> Cartesia (text-to-speech) -> caller
 
-Run locally:
+Production / Railway: run server.py (adds caller allowlist, Twilio request
+checks and a call time limit). See README.md.
+
+Quick local dev with Pipecat's built-in runner (no allowlist):
     ngrok http 7860
     python bot.py -t twilio -x <your-subdomain>.ngrok.app
 """
 
+import asyncio
 import os
 
 from dotenv import load_dotenv
 from loguru import logger
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
-from pipecat.frames.frames import LLMRunFrame
+from pipecat.frames.frames import EndFrame, LLMRunFrame, TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker
 from pipecat.processors.aggregators.llm_context import LLMContext
@@ -52,7 +56,9 @@ transport_params = {
 }
 
 
-async def run_bot(transport: BaseTransport, handle_sigint: bool):
+async def run_bot(
+    transport: BaseTransport, handle_sigint: bool, max_call_seconds: float | None = None
+):
     stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
 
     llm = AnthropicLLMService(
@@ -120,9 +126,28 @@ async def run_bot(transport: BaseTransport, handle_sigint: bool):
         logger.info("Caller hung up")
         await task.cancel()
 
+    async def end_call_after_time_limit():
+        await asyncio.sleep(max_call_seconds)
+        logger.info("Time limit reached, ending call")
+        # EndFrame lets the goodbye finish playing, then hangs up via Twilio.
+        await task.queue_frames(
+            [TTSSpeakFrame("Sorry, we've reached the time limit for this call. Goodbye!"), EndFrame()]
+        )
+        # Backstop: if the goodbye can't be spoken (e.g. TTS is down), force the
+        # call to end anyway. Cancelling also hangs up via Twilio.
+        await asyncio.sleep(15)
+        logger.warning("Call still running after goodbye, cancelling")
+        await task.cancel()
+
+    timer = asyncio.create_task(end_call_after_time_limit()) if max_call_seconds else None
+
     runner = WorkerRunner(handle_sigint=handle_sigint)
     await runner.add_workers(task)
-    await runner.run()
+    try:
+        await runner.run()
+    finally:
+        if timer:
+            timer.cancel()
 
 
 async def bot(runner_args: RunnerArguments):
